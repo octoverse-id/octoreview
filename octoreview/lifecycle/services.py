@@ -214,7 +214,8 @@ def create_review(entity: Entity, data: NewReview, ctx: AuditContext) -> Review:
             )
         _emit(review, "review.created", ctx)
         if review.status == ReviewStatus.PUBLISHED:
-            _emit(review, "review.published", ctx)
+            # Same shape as a published transition; null says it was published at creation.
+            _emit(review, "review.published", ctx, previous_status=None)
         _move_aggregates(locked, None, contribution(review), ctx)
         return review
 

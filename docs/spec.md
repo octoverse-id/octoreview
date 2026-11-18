@@ -771,15 +771,15 @@ namespace_type, namespace_id, resource_type, resource_id, request_id, data}`. Pa
 | --- | --- |
 | `review.created`, `review.updated`, `review.revision_submitted` | `review_id`, `entity_id`, `entity_type`, `external_id`, `status`, `rating`, `is_verified_purchase`, `version`, `media_version` |
 | `review.status_changed` | the above plus `previous_status` |
-| `review.published`, `review.removed` | the same fields as `review.status_changed` |
-| `review_media.ready`, `review_media.invalid`, `review_media.deleted` | `media_id`, `review_id`, `entity_id`, `kind`, `status`, `moderation_status`, `reason` (invalid only) |
-| `review_media.moderated` | `media_id`, `review_id`, `entity_id`, `moderation_status` |
+| `review.published`, `review.removed` | the same fields as `review.status_changed`; `previous_status` is null for a review published at creation |
+| `review_media.ready`, `review_media.invalid`, `review_media.deleted`, `review_media.moderated` | `media_id`, `review_id`, `entity_id`, `kind`, `status`, `moderation_status`, `reason` (invalid only) |
 | `entity.rating_changed` | `entity_id`, `entity_type`, `external_id`, `rating_count`, `rating_average`, `histogram`, `verified_review_count` |
 | `author.erased` | `author_id` (raw; the one exception), `erased_at`, `reviews_redacted` |
 
 **Emission rules.**
 - `review.status_changed` fires on every transition. `review.published` and `review.removed` fire
-  in addition when the review enters that status.
+  in addition when the review enters that status. Erasure is the exception: its `removed` moves
+  emit no review events, only `author.erased` (section 9).
 - `entity.rating_changed` fires whenever the aggregate changed.
 - A namespaced event is delivered like any other, and a test proves it.
 
@@ -891,7 +891,8 @@ Errors on the local token paths carry CORS headers.
 - **Modules.** `config/`, `octoreview/{core,audit,events,service_auth,entities,reviews,media,lifecycle,api,openapi}`,
   with `octoreview.media.storage` for the adapters.
 - **Layers.** An import-linter `layers` contract enforces, bottom to top: `core`, `audit` and
-  `events`; then `service_auth` → `entities` → `reviews` → `media` → `lifecycle`; and `api` on top.
+  `events`; then `service_auth` → `entities` → `reviews` → `media` → `lifecycle`; then `api`; and
+  `openapi` (the contract checks) on top.
   `api` owns views, serializers and urls, and may import every domain module. `lifecycle` owns the
   transition tables, removal cascades and erasure.
 - **Encapsulation.** A second contract forbids importing `media.storage` internals outside

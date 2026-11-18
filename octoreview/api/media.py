@@ -247,6 +247,11 @@ def media_upload(request, token):
     return HttpResponse(status=204)
 
 
+# Plain Django views name the methods they serve; `make openapi-check` reads these to match the
+# routes against docs/openapi.yaml (DRF views expose theirs on `.cls`).
+media_upload.http_methods = ("PUT",)
+
+
 def _parse_range(header: str | None, size: int):
     """Return (start, end) inclusive, None for a full response, or "invalid" for 416."""
 
@@ -330,3 +335,6 @@ def media_file(request, token):
     response["Accept-Ranges"] = "bytes"
     response["Cache-Control"] = "private, max-age=60"
     return _security_headers(response, media.content_type)
+
+
+media_file.http_methods = ("GET",)

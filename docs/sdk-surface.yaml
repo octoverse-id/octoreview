@@ -1,0 +1,323 @@
+# The SDK surface (docs/spec.md section 18): one entry per operation in docs/openapi.yaml, plus
+# the SDK-only helpers. The Go, PHP and JS SDKs, their contract gates and their README retry
+# tables follow this file. `docs/sdk-surface.md` is generated from it with `make sdk-surface`.
+# `make openapi-check` fails when this file and docs/openapi.yaml disagree (operations, required
+# and optional parameters) or when the generated table is stale.
+#
+# Method notation: Go `Client.<Resource>.<Method>(ctx, params)`, PHP
+# `$client-><resource>()-><method>($params)`, JS `client.<resource>.<method>(params)`.
+# Parameters are path, query and JSON body fields; headers (tenant, namespace, actor) are client
+# settings with per-call overrides.
+
+retry_classes:
+  safe: A read. The SDK retries on timeouts, 503 and 429, honoring Retry-After.
+  idempotent: Repeating a success leaves the same state and answer. The SDK retries like a read.
+  keyed: Idempotent when the idempotency field is sent. The SDK generates one when the caller does not, then retries like a read.
+  unsafe: Never retried automatically. After a lost response a repeat may answer 409; read the resource to learn the outcome.
+
+operations:
+  # --- health ------------------------------------------------------------------------------------
+  - operation: getHealthLive
+    go: Health.Live
+    php: health()->live
+    js: health.live
+    retry: safe
+    required: []
+    optional: []
+  - operation: getHealthReady
+    go: Health.Ready
+    php: health()->ready
+    js: health.ready
+    retry: safe
+    required: []
+    optional: []
+
+  # --- entities ----------------------------------------------------------------------------------
+  - operation: listEntities
+    go: Entities.List
+    php: entities()->list
+    js: entities.list
+    retry: safe
+    required: []
+    optional: [application_id, include_global, entity_type, external_id, is_active, limit, offset]
+  - operation: upsertEntity
+    go: Entities.Upsert
+    php: entities()->upsert
+    js: entities.upsert
+    retry: idempotent
+    required: [application_id, entity_type, external_id]
+    optional: [metadata, max_images, max_videos, max_image_bytes, max_video_bytes]
+  - operation: lookupEntity
+    go: Entities.Lookup
+    php: entities()->lookup
+    js: entities.lookup
+    retry: safe
+    required: [application_id, entity_type, external_id]
+    optional: [include_global]
+  - operation: getEntity
+    go: Entities.Get
+    php: entities()->get
+    js: entities.get
+    retry: safe
+    required: [entity_id]
+    optional: [application_id, include_global]
+  - operation: updateEntity
+    go: Entities.Update
+    php: entities()->update
+    js: entities.update
+    retry: idempotent
+    required: [entity_id]
+    optional:
+      [application_id, metadata, max_images, max_videos, max_image_bytes, max_video_bytes, is_active]
+  - operation: deactivateEntity
+    go: Entities.Deactivate
+    php: entities()->deactivate
+    js: entities.deactivate
+    retry: idempotent
+    required: [entity_id]
+    optional: [application_id]
+
+  # --- ratings -----------------------------------------------------------------------------------
+  - operation: getEntityRating
+    go: Ratings.ForEntity
+    php: ratings()->forEntity
+    js: ratings.forEntity
+    retry: safe
+    required: [entity_id]
+    optional: [application_id, include_global]
+  - operation: queryRatings
+    go: Ratings.Query
+    php: ratings()->query
+    js: ratings.query
+    retry: safe
+    required: [application_id, entity_type, external_ids]
+    optional: [include_global]
+
+  # --- settings ----------------------------------------------------------------------------------
+  - operation: getApplicationSettings
+    go: Settings.Get
+    php: settings()->get
+    js: settings.get
+    retry: safe
+    required: [application_id]
+    optional: []
+  - operation: putApplicationSettings
+    go: Settings.Put
+    php: settings()->put
+    js: settings.put
+    retry: idempotent
+    required:
+      - application_id
+      - max_images
+      - max_videos
+      - max_image_bytes
+      - max_video_bytes
+      - allowed_content_types
+      - moderation_mode
+      - max_storage_bytes
+    optional: []
+
+  # --- reviews -----------------------------------------------------------------------------------
+  - operation: listReviews
+    go: Reviews.List
+    php: reviews()->list
+    js: reviews.list
+    retry: safe
+    required: []
+    optional:
+      - application_id
+      - include_global
+      - entity_id
+      - entity_type
+      - external_id
+      - author_id
+      - include_unpublished
+      - status
+      - rating
+      - has_media
+      - is_verified_purchase
+      - has_pending_revision
+      - media_moderation_status
+      - sort
+      - limit
+      - offset
+  - operation: createReview
+    go: Reviews.Create
+    php: reviews()->create
+    js: reviews.create
+    retry: unsafe
+    required: [application_id, author_id, rating]
+    optional:
+      - entity_id
+      - entity_type
+      - external_id
+      - title
+      - body
+      - metadata
+      - author_metadata
+      - source_ref
+      - is_verified_purchase
+  - operation: getReview
+    go: Reviews.Get
+    php: reviews()->get
+    js: reviews.get
+    retry: safe
+    required: [review_id]
+    optional: [application_id, include_global, author_id, include_unpublished]
+  - operation: updateReview
+    go: Reviews.Update
+    php: reviews()->update
+    js: reviews.update
+    retry: unsafe
+    required: [review_id]
+    optional:
+      [application_id, rating, title, body, metadata, author_metadata, is_verified_purchase]
+  - operation: removeReview
+    go: Reviews.Remove
+    php: reviews()->remove
+    js: reviews.remove
+    retry: unsafe
+    required: [review_id]
+    optional: [application_id]
+  - operation: publishReview
+    go: Reviews.Publish
+    php: reviews()->publish
+    js: reviews.publish
+    retry: unsafe
+    required: [review_id, expected_version, expected_media_version]
+    optional: [application_id, reason]
+  - operation: rejectReview
+    go: Reviews.Reject
+    php: reviews()->reject
+    js: reviews.reject
+    retry: unsafe
+    required: [review_id]
+    optional: [application_id, reason]
+  - operation: hideReview
+    go: Reviews.Hide
+    php: reviews()->hide
+    js: reviews.hide
+    retry: unsafe
+    required: [review_id]
+    optional: [application_id, reason]
+  - operation: getReviewRevision
+    go: Reviews.GetRevision
+    php: reviews()->getRevision
+    js: reviews.getRevision
+    retry: safe
+    required: [review_id]
+    optional: [application_id]
+  - operation: approveReviewRevision
+    go: Reviews.ApproveRevision
+    php: reviews()->approveRevision
+    js: reviews.approveRevision
+    retry: unsafe
+    required: [review_id, revision_id, expected_version, expected_media_version]
+    optional: [application_id]
+  - operation: rejectReviewRevision
+    go: Reviews.RejectRevision
+    php: reviews()->rejectRevision
+    js: reviews.rejectRevision
+    retry: unsafe
+    required: [review_id, revision_id]
+    optional: [application_id]
+
+  # --- media -------------------------------------------------------------------------------------
+  - operation: listReviewMedia
+    go: Media.List
+    php: media()->list
+    js: media.list
+    retry: safe
+    required: [review_id]
+    optional: [application_id, include_global, author_id, include_unpublished]
+  - operation: createMediaUpload
+    go: Media.CreateUpload
+    php: media()->createUpload
+    js: media.createUpload
+    retry: keyed
+    idempotency_key: client_upload_id
+    required: [review_id, kind, content_type, size_bytes]
+    optional: [application_id, client_upload_id, position, width, height, duration_seconds]
+  - operation: completeMediaUpload
+    go: Media.Complete
+    php: media()->complete
+    js: media.complete
+    retry: idempotent
+    required: [review_id, media_id]
+    optional: [application_id]
+  - operation: deleteMedia
+    go: Media.Delete
+    php: media()->delete
+    js: media.delete
+    retry: idempotent
+    required: [review_id, media_id]
+    optional: [application_id]
+  - operation: approveMedia
+    go: Media.Approve
+    php: media()->approve
+    js: media.approve
+    retry: unsafe
+    required: [review_id, media_id, expected_version, expected_media_version]
+    optional: [application_id, reason]
+  - operation: rejectMedia
+    go: Media.Reject
+    php: media()->reject
+    js: media.reject
+    retry: idempotent
+    required: [review_id, media_id]
+    optional: [application_id, reason]
+  - operation: uploadMediaBytes
+    sdk: none
+    reason: The upload helpers PUT to `upload.url` as returned; it is never built from this path.
+  - operation: downloadMedia
+    sdk: none
+    reason: Media `url` values are handed to browsers and players as returned.
+
+  # --- privacy and audit -------------------------------------------------------------------------
+  - operation: eraseAuthor
+    go: Authors.Erase
+    php: authors()->erase
+    js: authors.erase
+    retry: idempotent
+    required: [application_id, author_id]
+    optional: []
+  - operation: listAuditLogs
+    go: AuditLogs.List
+    php: auditLogs()->list
+    js: auditLogs.list
+    retry: safe
+    required: []
+    optional:
+      [application_id, include_global, action, aggregate_type, aggregate_id, actor_id, limit, offset]
+
+helpers:
+  - name: uploadFile
+    go: Media.UploadFile
+    php: media()->uploadFile
+    js: media.uploadFile
+    composes: [createMediaUpload, completeMediaUpload, deleteMedia]
+    summary: Intent, PUT and complete for a file path; infers content type and size.
+  - name: uploadBytes
+    go: Media.UploadBytes
+    php: media()->uploadBytes
+    js: media.uploadBytes
+    composes: [createMediaUpload, completeMediaUpload, deleteMedia]
+    summary: Intent, PUT and complete for an in-memory body and a content type.
+  - name: uploadStream
+    go: Media.UploadStream
+    php: media()->uploadStream
+    js: media.uploadStream
+    composes: [createMediaUpload, completeMediaUpload, deleteMedia]
+    summary: Intent, PUT and complete for a rewindable stream with an explicit size.
+  - name: ratingsByKey
+    go: Ratings.Get
+    php: ratings()->get
+    js: ratings.get
+    composes: [lookupEntity]
+    summary: The rating summary of `{entityType, externalId}` without knowing the entity id.
+  - name: verifyWebhook
+    go: Webhooks.Verify
+    php: webhooks()->verify
+    js: webhooks.verify
+    composes: []
+    summary: Check `X-Octoreview-Signature` (300 s tolerance) and decode the typed event.
