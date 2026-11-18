@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Reviews: `POST/GET /api/v1/reviews` (auto-creates the entity; `source_ref` and
+  `is_verified_purchase` need `reviews:attest`), `GET/PATCH/DELETE /api/v1/reviews/{id}`, publish,
+  reject and hide with the `expected_version`/`expected_media_version` guard, pending revisions
+  under pre-moderation (`GET .../revision`, approve, reject), published-only lists with the author
+  path and the moderator queue, thin review events and `entity.rating_changed`.
+  `POST /api/v1/authors/erase` and `manage.py erase_author` (batched, pseudonymised author ids,
+  audit redaction, `author.erased`). `manage.py recompute_ratings [--check]`.
 - Entities: `PUT /api/v1/entities` (upsert that never reactivates), list, lookup, detail,
   `PATCH` and deactivation, bounded to the caller's applications and namespace partition, with a
   namespaced entity winning over a global one under `include_global=true`. Rating summaries

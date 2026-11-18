@@ -30,5 +30,13 @@ if [ -n "$hits" ]; then
   status=1
 fi
 
+# Review.ready_media_count has one writer, the lifecycle service (spec section 3.5).
+hits=$(grep -rnE --include='*.py' --exclude-dir=migrations 'ready_media_count\s*=[^=]' octoreview \
+  | grep -v '^octoreview/lifecycle/' | grep -v '^octoreview/reviews/models.py:' || true)
+if [ -n "$hits" ]; then
+  while IFS= read -r hit; do echo "ready-media-count-single-writer: $hit"; done <<<"$hits"
+  status=1
+fi
+
 if [ "$status" -eq 0 ]; then echo "check-forbidden OK"; fi
 exit "$status"
