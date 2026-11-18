@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every job name below is a final required check in the `main: require PR + green CI` ruleset
+# (.github/rulesets/main-require-pr-green-ci.json). Jobs marked octoreview:placeholder are
+# bootstrap stand-ins that pass so the ruleset could be set once; each is replaced by the real
+# job in its feature PR. `make release-check` fails while any placeholder remains.
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    # Explicit timeouts everywhere: the default is 360 minutes and every job here is required.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint GitHub Actions workflows
+        # Pinned actionlint via `go install` (checksum-verified by the Go module database).
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint" -color
+      - name: Check llms.txt links
+        run: make llms-check
+
+  checks:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'checks' becomes a real job in its feature PR"
+
+  security:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'security' becomes a real job in its feature PR"
+
+  test-sqlite:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'test-sqlite' becomes a real job in its feature PR"
+
+  test-postgres:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'test-postgres' becomes a real job in its feature PR"
+
+  storage-emulators:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'storage-emulators' becomes a real job in its feature PR"
+
+  compose-quickstart:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'compose-quickstart' becomes a real job in its feature PR"
+
+  docker:
+    # octoreview:placeholder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap placeholder
+        run: echo "octoreview:placeholder - 'docker' becomes a real job in its feature PR"

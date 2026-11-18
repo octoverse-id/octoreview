@@ -1,0 +1,19 @@
+# octoreview
+
+> Multi-tenant review and rating service with image and video review media and configurable storage (local, S3, Azure Blob, GCS), built with Django REST Framework and PostgreSQL. Part of the octoverse family, modelled on octonomy. Status: bootstrapped; release
+> line 1 in progress.
+
+Gates: `make check` (fast, toolchain only) and `make release-check` (full). `make help` lists
+every target.
+
+## Docs
+
+- [Agent rules](AGENTS.md): product rules, gates and the development pipeline
+- [README](README.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Release runbook](docs/release.md)
+- [Versioning policy](docs/versioning.md)
+- [Rulesets](.github/rulesets/README.md): the live rulesets' reviewable mirror
+- [TODOS](TODOS.md): deferred work, each with a trigger
