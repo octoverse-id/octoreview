@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The API contract, frozen for the SDKs: `docs/openapi.yaml` (OpenAPI 3.1, every `/api/v1`
+  operation with request and response schemas and the full error-code enum), `docs/errors.md`
+  (one section per error code with status, details, fix and recovery), `docs/events.md` (envelope,
+  webhook signature, one payload per event type, the erasure purge rule) and
+  `docs/sdk-surface.yaml` with the generated `docs/sdk-surface.md` (Go, PHP and JS method names,
+  retry classes, parameters). `make openapi-check` (part of `make checks`) compares them with the
+  URLconf and the error and event registries; a conformance test validates a real response of
+  every operation against its schema. `make sdk-surface` regenerates the table.
+- `not_found` errors name the scope the lookup searched (`details.scope`).
+- `review.published` always carries `previous_status` (null for a review published at creation).
+
 - Review media on the local backend: upload intents (`POST /api/v1/reviews/{id}/media`) with
   per-entity image and video limits, the allowed-type list, size caps, `client_upload_id` replay
   with a fresh upload URL, and the optional per-application `max_storage_bytes` quota (computed

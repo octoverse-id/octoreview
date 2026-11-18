@@ -9,7 +9,8 @@ this with import-linter (`[tool.importlinter]` in `pyproject.toml`).
 
 | Layer | Module | Owns |
 | --- | --- | --- |
-| top | `octoreview.api` | Views, serializers and URL routes; composes the domain modules |
+| top | `octoreview.openapi` | `make openapi-check`: compares `docs/openapi.yaml`, `errors.md`, `events.md` and `sdk-surface.yaml` with the URLconf and the error and event registries |
+| | `octoreview.api` | Views, serializers and URL routes; composes the domain modules |
 | | `octoreview.lifecycle` | Transition tables, removal cascades, erasure (release line 1) |
 | | `octoreview.media` | Media rows, upload intents, completion, signed tokens; `media.storage` holds the adapters and nothing else imports it |
 | | `octoreview.reviews` | Reviews and revisions (release line 1) |

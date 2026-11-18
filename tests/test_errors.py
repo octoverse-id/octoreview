@@ -69,3 +69,20 @@ def test_unexpected_exception_returns_internal_error_envelope(rf):
     assert response.data["error"]["code"] == "internal_error"
     assert response.data["error"]["request_id"] == "req_test"
     assert "boom" not in str(response.data)
+
+
+def test_not_found_names_the_scope_it_searched(api_client, headers, make_key):
+    token = make_key({"application_id": "app-1", "scopes": ["reviews:read"]})
+    response = api_client.get(
+        "/api/v1/reviews/00000000-0000-0000-0000-000000000000?application_id=app-1",
+        **headers(token),
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["details"] == {
+        "scope": {
+            "tenant_id": "tenant-a",
+            "application_id": "app-1",
+            "namespace_type": None,
+            "namespace_id": None,
+        }
+    }

@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "octoreview.reviews",
     "octoreview.media",
     "octoreview.lifecycle",
+    "octoreview.openapi",
     "corsheaders",
 ]
 

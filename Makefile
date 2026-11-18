@@ -23,11 +23,12 @@ format: ## Apply ruff formatting and safe fixes
 	uv run ruff check --fix .
 	uv run ruff format .
 
-checks: ## Django system checks, migration drift, import layers and grep gates
+checks: ## Django system checks, migration drift, import layers, grep gates and the API contract
 	$(PYTEST_SETTINGS) uv run python manage.py check
 	$(PYTEST_SETTINGS) uv run python manage.py makemigrations --check --dry-run
 	uv run lint-imports
 	@./scripts/check-forbidden.sh
+	@$(MAKE) --no-print-directory openapi-check
 
 test: ## Run the test suite on SQLite
 	uv run pytest
@@ -35,6 +36,12 @@ test: ## Run the test suite on SQLite
 test-postgres: ## Run the test suite on PostgreSQL in Docker (needs Docker)
 	@command -v docker >/dev/null || { echo "test-postgres needs Docker; install it or use make test" >&2; exit 1; }
 	@./scripts/test-postgres.sh $(PG_CONTAINER) $(PG_PORT) $(PG_URL)
+
+openapi-check: ## Check docs/openapi.yaml, errors.md, events.md and sdk-surface.yaml against the server
+	$(PYTEST_SETTINGS) uv run python manage.py check_contract
+
+sdk-surface: ## Regenerate docs/sdk-surface.md from docs/sdk-surface.yaml, then check the contract
+	$(PYTEST_SETTINGS) uv run python manage.py check_contract --write
 
 storage-check: ## Round-trip a probe object through the configured storage backend
 	uv run python manage.py check_storage

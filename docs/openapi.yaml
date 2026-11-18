@@ -1,0 +1,1696 @@
+openapi: 3.1.0
+info:
+  title: Octoreview API
+  version: 1.0.0-rc.1
+  summary: Reviews, ratings and review media for any external entity.
+  description: |
+    The contract the Go, PHP and JavaScript SDKs vendor. `docs/spec.md` is the spec of record;
+    `make openapi-check` keeps this document, `docs/errors.md`, `docs/events.md` and
+    `docs/sdk-surface.yaml` in step with the server.
+
+    Every authenticated request sends `Authorization: Bearer <service key>` and `X-Tenant-ID`.
+    Every response, errors included, carries `X-Request-ID`. Errors use the envelope in
+    `components/schemas/Error`; `doc_url` links to the code's anchor in `docs/errors.md`.
+
+    New response fields may be added in a minor release: clients ignore fields they do not know.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /api/v1
+security:
+  - serviceKey: []
+tags:
+  - name: health
+  - name: entities
+  - name: ratings
+  - name: settings
+  - name: reviews
+  - name: revisions
+  - name: media
+  - name: privacy
+  - name: audit
+
+paths:
+  /health/live:
+    get:
+      operationId: getHealthLive
+      tags: [health]
+      summary: Liveness probe.
+      security: []
+      responses:
+        "200":
+          description: The process is serving requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/HealthLive" }
+
+  /health/ready:
+    get:
+      operationId: getHealthReady
+      tags: [health]
+      summary: Readiness probe. Checks the database, never storage.
+      security: []
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthReadyResponse" }
+        "503":
+          description: The database is unreachable (not the error envelope).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthReadyResponse" }
+
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [audit]
+      summary: List audit log rows, newest first.
+      description: An exact-namespace grant sees only its namespace's rows. Needs `audit:read`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+        - { name: action, in: query, schema: { type: string } }
+        - { name: aggregate_type, in: query, schema: { type: string } }
+        - { name: aggregate_id, in: query, schema: { type: string } }
+        - { name: actor_id, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of audit rows.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditLogList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /entities:
+    put:
+      operationId: upsertEntity
+      tags: [entities]
+      summary: Create an entity, or update its metadata and media policy overrides.
+      description: |
+        Keyed by `(application_id, entity_type, external_id)` in the request's namespace.
+        Never reactivates an inactive entity; use `PATCH /entities/{entity_id}` with
+        `is_active: true`. Needs `entities:write`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntityUpsert" }
+      responses:
+        "200":
+          description: The entity existed and was updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityResponse" }
+        "201":
+          description: The entity was created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listEntities
+      tags: [entities]
+      summary: List entities, newest first.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+        - { name: entity_type, in: query, schema: { type: string } }
+        - { name: external_id, in: query, schema: { type: string } }
+        - { name: is_active, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of entities.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /entities/lookup:
+    get:
+      operationId: lookupEntity
+      tags: [entities]
+      summary: Find one entity by its external key.
+      description: |
+        With `include_global=true` on a namespaced request, a namespaced entity wins over a
+        global one with the same key.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - { name: application_id, in: query, required: true, schema: { $ref: "#/components/schemas/ScopeId" } }
+        - { name: entity_type, in: query, required: true, schema: { type: string } }
+        - { name: external_id, in: query, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IncludeGlobal"
+      responses:
+        "200":
+          description: The entity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /entities/ratings/query:
+    post:
+      operationId: queryRatings
+      tags: [ratings]
+      summary: Rating summaries for up to 100 entities in one call (a read).
+      description: |
+        One summary per requested id, in request order. An unknown id gets a zero-count summary
+        with `entity_id: null`. Duplicate ids are answered at every position. Needs
+        `entities:read`. Sends `Cache-Control: private, max-age=60`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/IncludeGlobal"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RatingsQuery" }
+      responses:
+        "200":
+          description: The summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/BatchRating" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /entities/{entity_id}:
+    parameters:
+      - $ref: "#/components/parameters/EntityId"
+    get:
+      operationId: getEntity
+      tags: [entities]
+      summary: Get one entity with its rating summary.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+      responses:
+        "200":
+          description: The entity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateEntity
+      tags: [entities]
+      summary: Change metadata, media policy overrides or `is_active`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntityPatch" }
+      responses:
+        "200":
+          description: The updated entity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deactivateEntity
+      tags: [entities]
+      summary: Deactivate the entity (`is_active=false`); nothing is deleted.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/ActorId"
+      responses:
+        "200":
+          description: The deactivated entity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntityResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /entities/{entity_id}/rating:
+    parameters:
+      - $ref: "#/components/parameters/EntityId"
+    get:
+      operationId: getEntityRating
+      tags: [ratings]
+      summary: "The entity's rating summary. Sends `Cache-Control: private, max-age=60`."
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/EntityRating" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /applications/{application_id}/settings:
+    parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/ScopeId" }
+    get:
+      operationId: getApplicationSettings
+      tags: [settings]
+      summary: Application defaults plus computed storage usage.
+      description: Needs `settings:read` on a global-only or `namespace_wildcard` grant.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: The settings; every field is null until set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationSettingsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: putApplicationSettings
+      tags: [settings]
+      summary: Replace every settings field; null means "inherit the server default".
+      description: Needs `settings:write` on a global-only or `namespace_wildcard` grant.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationSettingsPut" }
+      responses:
+        "200":
+          description: The stored settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationSettingsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews:
+    post:
+      operationId: createReview
+      tags: [reviews]
+      summary: Create a review; the entity is created on first use.
+      description: |
+        Send `entity_id`, or `entity_type` with `external_id`. `source_ref` and
+        `is_verified_purchase` need `reviews:attest`. A duplicate
+        `(entity, author_id[, source_ref])` answers 409 `review_exists` with
+        `details.review_id`. Under pre-moderation the review starts `pending`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewCreate" }
+      responses:
+        "201":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listReviews
+      tags: [reviews]
+      summary: List reviews; published only by default.
+      description: |
+        Another `status`, `has_pending_revision` or `media_moderation_status` needs
+        `reviews:moderate`, except the author path: `author_id` with `include_unpublished=true`
+        returns that author's non-removed reviews of any status. Sends
+        `Cache-Control: private, max-age=60`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+        - { name: entity_id, in: query, schema: { type: string, format: uuid } }
+        - { name: entity_type, in: query, schema: { type: string } }
+        - { name: external_id, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/AuthorId"
+        - $ref: "#/components/parameters/IncludeUnpublished"
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ReviewStatus" } }
+        - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: has_media, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: is_verified_purchase, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: has_pending_revision, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: media_moderation_status, in: query, schema: { $ref: "#/components/schemas/ModerationStatus" } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, rating], default: newest } }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of reviews with embedded media.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    get:
+      operationId: getReview
+      tags: [reviews]
+      summary: Get one review in any status.
+      description: The author path (`author_id` equal to the review's author, with `include_unpublished=true`) returns author media URLs.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+        - $ref: "#/components/parameters/AuthorId"
+        - $ref: "#/components/parameters/IncludeUnpublished"
+      responses:
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateReview
+      tags: [reviews]
+      summary: Edit a review.
+      description: |
+        Under pre-moderation an edit of a published review becomes a pending revision.
+        `is_verified_purchase` needs `reviews:attest`; `source_ref` is immutable (409).
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewPatch" }
+      responses:
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: removeReview
+      tags: [reviews]
+      summary: Move the review to `removed` (never a hard delete).
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/ActorId"
+      responses:
+        "200":
+          description: The removed review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    post:
+      operationId: publishReview
+      tags: [reviews]
+      summary: Publish a review, guarded by the versions the moderator saw.
+      parameters: &moderationParameters
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewPublish" }
+      responses: &reviewWriteResponses
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    post:
+      operationId: rejectReview
+      tags: [reviews]
+      summary: Reject a pending review.
+      parameters: *moderationParameters
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModerationReason" }
+      responses: *reviewWriteResponses
+
+  /reviews/{review_id}/hide:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    post:
+      operationId: hideReview
+      tags: [reviews]
+      summary: Hide a published review; its media objects are kept.
+      parameters: *moderationParameters
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModerationReason" }
+      responses: *reviewWriteResponses
+
+  /reviews/{review_id}/revision:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    get:
+      operationId: getReviewRevision
+      tags: [revisions]
+      summary: The review's pending revision. Needs `reviews:moderate`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+      responses:
+        "200":
+          description: The pending revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/Revision" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}/revision/approve:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    post:
+      operationId: approveReviewRevision
+      tags: [revisions]
+      summary: Apply the pending revision, guarded by the versions the moderator saw.
+      parameters: *moderationParameters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RevisionApprove" }
+      responses: *reviewWriteResponses
+
+  /reviews/{review_id}/revision/reject:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    post:
+      operationId: rejectReviewRevision
+      tags: [revisions]
+      summary: Discard the pending revision.
+      parameters: *moderationParameters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RevisionReject" }
+      responses: *reviewWriteResponses
+
+  /reviews/{review_id}/media:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+    post:
+      operationId: createMediaUpload
+      tags: [media]
+      summary: Reserve a media slot and get an upload target (intent).
+      description: |
+        PUT the bytes to `upload.url` with exactly `upload.headers` and an explicit
+        `Content-Length` (never chunked, never the service key), then call complete. A retry
+        with the same `client_upload_id` answers 200 with the same row and a fresh URL for it
+        (`upload: null` once the row is no longer uploadable). Needs `media:write`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaIntent" }
+      responses:
+        "200":
+          description: A `client_upload_id` replay of an existing row.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaIntentResponse" }
+        "201":
+          description: A new pending row and its upload target.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaIntentResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listReviewMedia
+      tags: [media]
+      summary: Every non-deleted media item of the review (no embed cap).
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/NamespaceType"
+        - $ref: "#/components/parameters/NamespaceId"
+        - $ref: "#/components/parameters/ApplicationIdQuery"
+        - $ref: "#/components/parameters/IncludeGlobal"
+        - $ref: "#/components/parameters/AuthorId"
+        - $ref: "#/components/parameters/IncludeUnpublished"
+      responses:
+        "200":
+          description: The media, in position order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Media" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}/media/{media_id}:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+      - $ref: "#/components/parameters/MediaId"
+    delete:
+      operationId: deleteMedia
+      tags: [media]
+      summary: Delete the media object; the row stays as `deleted` (idempotent).
+      description: |
+        Answers `deleting` when the storage delete failed; `cleanup_media` retries it and the URL
+        is already null. Refused on a `removed` review (409 `invalid_transition`).
+      parameters: *moderationParameters
+      responses: &mediaWriteResponses
+        "200":
+          description: The media item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}/media/{media_id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+      - $ref: "#/components/parameters/MediaId"
+    post:
+      operationId: completeMediaUpload
+      tags: [media]
+      summary: Validate the uploaded bytes and make the media ready (idempotent).
+      description: |
+        Retry on 503, 409 `complete_in_progress` and 409 `upload_changed`. A 422
+        `media_rejected` is final for this row: upload again with a new intent.
+      parameters: *moderationParameters
+      responses:
+        "200":
+          description: The ready media item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /reviews/{review_id}/media/{media_id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+      - $ref: "#/components/parameters/MediaId"
+    post:
+      operationId: approveMedia
+      tags: [media]
+      summary: Approve pending-moderation media, guarded by the review versions.
+      parameters: *moderationParameters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaApprove" }
+      responses: *mediaWriteResponses
+
+  /reviews/{review_id}/media/{media_id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/ReviewId"
+      - $ref: "#/components/parameters/MediaId"
+    post:
+      operationId: rejectMedia
+      tags: [media]
+      summary: Reject ready media; the object is kept so the decision can be reversed.
+      parameters: *moderationParameters
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModerationReason" }
+      responses: *mediaWriteResponses
+
+  /authors/erase:
+    post:
+      operationId: eraseAuthor
+      tags: [privacy]
+      summary: Redact a batch of the author's reviews; call again while `remaining > 0`.
+      description: |
+        Needs `privacy:erase` on a global-only or `namespace_wildcard` grant. Emits
+        `author.erased`.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/ActorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EraseRequest" }
+      responses:
+        "200":
+          description: What this batch did.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/EraseResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /media-uploads/{token}:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    put:
+      operationId: uploadMediaBytes
+      tags: [media]
+      summary: Local backend only. The target of a local `upload.url`.
+      description: |
+        Reached through `upload.url`, never built by hand. Requires `Content-Length`; chunked
+        bodies get 411. CSRF does not apply; the signed token is the credential.
+      security: []
+      requestBody:
+        required: true
+        content:
+          image/jpeg: {}
+          image/png: {}
+          image/webp: {}
+          video/mp4: {}
+          video/webm: {}
+          video/quicktime: {}
+      responses:
+        "204":
+          description: The bytes are staged; call complete.
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "405": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "411": { $ref: "#/components/responses/LengthRequired" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /media-files/{token}:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+    get:
+      operationId: downloadMedia
+      tags: [media]
+      summary: Local backend only. The target of a local media `url`.
+      description: |
+        A `public` URL stops working once the media is no longer publicly visible; `author` and
+        `moderator` URLs stop once it is deleting or deleted (404). Sends
+        `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`
+        and `Cross-Origin-Resource-Policy`.
+      security: []
+      parameters:
+        - name: Range
+          in: header
+          description: One range (`bytes=0-99`, `bytes=100-`, `bytes=-100`); a multi-range gets the whole body.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The whole file.
+          content: &mediaBytes
+            image/jpeg: {}
+            image/png: {}
+            image/webp: {}
+            video/mp4: {}
+            video/webm: {}
+            video/quicktime: {}
+        "206":
+          description: The requested range, with `Content-Range`.
+          content: *mediaBytes
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "416": { $ref: "#/components/responses/RangeNotSatisfiable" }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    serviceKey:
+      type: http
+      scheme: bearer
+      description: A service key, `ocr_<8 hex>_<secret>`. Never echoed in any response.
+
+  parameters:
+    TenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema: { $ref: "#/components/schemas/ScopeId" }
+    NamespaceType:
+      name: X-Namespace-Type
+      in: header
+      description: Send with `X-Namespace-ID`, or neither (global). `global` is reserved.
+      schema: { type: string, maxLength: 100 }
+    NamespaceId:
+      name: X-Namespace-ID
+      in: header
+      schema: { type: string, maxLength: 100 }
+    ActorId:
+      name: X-Actor-ID
+      in: header
+      description: Recorded in the audit log.
+      schema: { type: string, maxLength: 255 }
+    ApplicationIdQuery:
+      name: application_id
+      in: query
+      description: |
+        The application the request acts in. Required when the key is bound to applications;
+        a write may send it in the body instead. Path, query and body must agree.
+      schema: { $ref: "#/components/schemas/ScopeId" }
+    IncludeGlobal:
+      name: include_global
+      in: query
+      description: On a namespaced read, also return global rows the grant covers.
+      schema: { type: string, enum: ["true", "false"] }
+    AuthorId:
+      name: author_id
+      in: query
+      schema: { type: string, maxLength: 255 }
+    IncludeUnpublished:
+      name: include_unpublished
+      in: query
+      description: With `author_id`, the author path (the author's non-removed reviews and media).
+      schema: { type: string, enum: ["true", "false"] }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, maximum: 10000, default: 0 }
+    EntityId:
+      name: entity_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReviewId:
+      name: review_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MediaId:
+      name: media_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Token:
+      name: token
+      in: path
+      required: true
+      description: A signed token taken from a URL the API returned.
+      schema: { type: string }
+
+  headers:
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+
+  responses:
+    Error:
+      description: Any error; see `error.code`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: |
+        `validation_error`, `invalid_namespace`, `application_mismatch`, `media_too_large`,
+        `content_type_not_allowed`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: "`authentication_required`, `invalid_api_key`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: "`permission_denied`, `upload_token_invalid`, `media_token_invalid`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: "`not_found`: missing, or outside the key's tenant, application or namespace."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: |
+        `review_exists`, `entity_inactive`, `invalid_transition`, `review_changed`,
+        `revision_superseded`, `revision_stale`, `source_ref_immutable`,
+        `review_not_accepting_media`, `media_limit_exceeded`, `storage_quota_exceeded`,
+        `upload_expired`, `upload_not_found`, `upload_changed`, `complete_in_progress`,
+        `upload_already_completed`.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Gone:
+      description: "`upload_token_expired`, `media_token_expired`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    LengthRequired:
+      description: "`content_length_required`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: "`upload_too_large`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RangeNotSatisfiable:
+      description: "`range_not_satisfiable`, with `Content-Range: bytes */<size>`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: "`media_rejected`, with `details.reason`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: "`storage_unavailable`, `storage_credentials_expiring`, `too_many_completions`."
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    ScopeId:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+    NullableString:
+      type: [string, "null"]
+    Timestamp:
+      type: string
+      format: date-time
+    NullableTimestamp:
+      type: [string, "null"]
+      format: date-time
+    JsonObject:
+      type: object
+      description: A JSON object chosen by the caller (bounded in size and depth).
+    NullableCount:
+      type: [integer, "null"]
+      minimum: 0
+
+    ErrorCode:
+      type: string
+      description: Every code the server sends; `docs/errors.md#<code>` explains each.
+      enum:
+        - validation_error
+        - invalid_namespace
+        - application_mismatch
+        - media_too_large
+        - content_type_not_allowed
+        - authentication_required
+        - invalid_api_key
+        - permission_denied
+        - upload_token_invalid
+        - media_token_invalid
+        - not_found
+        - method_not_allowed
+        - not_acceptable
+        - review_exists
+        - entity_inactive
+        - invalid_transition
+        - review_changed
+        - revision_superseded
+        - revision_stale
+        - source_ref_immutable
+        - review_not_accepting_media
+        - media_limit_exceeded
+        - storage_quota_exceeded
+        - upload_expired
+        - upload_not_found
+        - upload_changed
+        - complete_in_progress
+        - upload_already_completed
+        - upload_token_expired
+        - media_token_expired
+        - content_length_required
+        - upload_too_large
+        - unsupported_media_type
+        - range_not_satisfiable
+        - media_rejected
+        - internal_error
+        - storage_unavailable
+        - storage_credentials_expiring
+        - too_many_completions
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details, request_id, doc_url, retryable]
+          properties:
+            code: { $ref: "#/components/schemas/ErrorCode" }
+            message:
+              type: string
+              description: Ends with the fix the caller can apply.
+            details:
+              type: object
+              description: Code-specific fields; `docs/errors.md` lists them per code.
+            request_id: { $ref: "#/components/schemas/NullableString" }
+            doc_url: { type: string, format: uri }
+            retryable: { type: boolean }
+
+    Pagination:
+      type: object
+      required: [limit, offset, count]
+      properties:
+        limit: { type: integer }
+        offset: { type: integer }
+        count: { type: integer, description: Total rows matching the filters. }
+
+    HealthLive:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+    HealthReadyResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status, database]
+          properties:
+            status: { type: string, enum: [ok, unavailable] }
+            database: { type: string, enum: [ok, down] }
+
+    Histogram:
+      type: object
+      description: Published reviews per star.
+      required: ["1", "2", "3", "4", "5"]
+      properties:
+        "1": { type: integer, minimum: 0 }
+        "2": { type: integer, minimum: 0 }
+        "3": { type: integer, minimum: 0 }
+        "4": { type: integer, minimum: 0 }
+        "5": { type: integer, minimum: 0 }
+    HistogramPercent:
+      type: object
+      description: One decimal each; not guaranteed to sum to 100; all zeros when the count is 0.
+      required: ["1", "2", "3", "4", "5"]
+      properties:
+        "1": { type: number }
+        "2": { type: number }
+        "3": { type: number }
+        "4": { type: number }
+        "5": { type: number }
+    RatingAverage:
+      type: [number, "null"]
+      description: Two decimals; null when `rating_count` is 0.
+    RatingSummary:
+      type: object
+      required: [rating_count, rating_average, histogram, histogram_percent, verified_review_count]
+      properties:
+        rating_count: { type: integer, minimum: 0, description: Published reviews. }
+        rating_average: { $ref: "#/components/schemas/RatingAverage" }
+        histogram: { $ref: "#/components/schemas/Histogram" }
+        histogram_percent: { $ref: "#/components/schemas/HistogramPercent" }
+        verified_review_count: { type: integer, minimum: 0 }
+    EntityRating:
+      type: object
+      required:
+        [entity_id, rating_count, rating_average, histogram, histogram_percent, verified_review_count]
+      properties:
+        entity_id: { type: string, format: uuid }
+        rating_count: { type: integer, minimum: 0 }
+        rating_average: { $ref: "#/components/schemas/RatingAverage" }
+        histogram: { $ref: "#/components/schemas/Histogram" }
+        histogram_percent: { $ref: "#/components/schemas/HistogramPercent" }
+        verified_review_count: { type: integer, minimum: 0 }
+    BatchRating:
+      type: object
+      required:
+        - external_id
+        - entity_id
+        - namespace_type
+        - namespace_id
+        - rating_count
+        - rating_average
+        - histogram
+        - histogram_percent
+        - verified_review_count
+      properties:
+        external_id: { type: string }
+        entity_id:
+          type: [string, "null"]
+          format: uuid
+          description: Null when no entity has this key; the summary is then all zeros.
+        namespace_type: { $ref: "#/components/schemas/NullableString" }
+        namespace_id: { $ref: "#/components/schemas/NullableString" }
+        rating_count: { type: integer, minimum: 0 }
+        rating_average: { $ref: "#/components/schemas/RatingAverage" }
+        histogram: { $ref: "#/components/schemas/Histogram" }
+        histogram_percent: { $ref: "#/components/schemas/HistogramPercent" }
+        verified_review_count: { type: integer, minimum: 0 }
+    RatingsQuery:
+      type: object
+      required: [application_id, entity_type, external_ids]
+      properties:
+        application_id: { $ref: "#/components/schemas/ScopeId" }
+        entity_type: { type: string }
+        external_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 255 }
+
+    MediaPolicy:
+      type: object
+      description: The entity's overrides; null inherits the application, then the server default.
+      required: [max_images, max_videos, max_image_bytes, max_video_bytes]
+      properties:
+        max_images: { $ref: "#/components/schemas/NullableCount" }
+        max_videos: { $ref: "#/components/schemas/NullableCount" }
+        max_image_bytes: { $ref: "#/components/schemas/NullableCount" }
+        max_video_bytes: { $ref: "#/components/schemas/NullableCount" }
+    Entity:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - application_id
+        - namespace_type
+        - namespace_id
+        - entity_type
+        - external_id
+        - metadata
+        - is_active
+        - media_policy
+        - rating
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        application_id: { type: string }
+        namespace_type: { $ref: "#/components/schemas/NullableString" }
+        namespace_id: { $ref: "#/components/schemas/NullableString" }
+        entity_type: { type: string }
+        external_id: { type: string }
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        is_active: { type: boolean }
+        media_policy: { $ref: "#/components/schemas/MediaPolicy" }
+        rating: { $ref: "#/components/schemas/RatingSummary" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    EntityResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Entity" }
+    EntityList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Entity" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    EntityUpsert:
+      type: object
+      required: [application_id, entity_type, external_id]
+      properties:
+        application_id: { $ref: "#/components/schemas/ScopeId" }
+        entity_type:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_.-]{0,99}$"
+        external_id: { type: string, minLength: 1, maxLength: 255 }
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        max_images: { $ref: "#/components/schemas/NullableCount" }
+        max_videos: { $ref: "#/components/schemas/NullableCount" }
+        max_image_bytes: { $ref: "#/components/schemas/NullableCount" }
+        max_video_bytes: { $ref: "#/components/schemas/NullableCount" }
+    EntityPatch:
+      type: object
+      properties:
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        max_images: { $ref: "#/components/schemas/NullableCount" }
+        max_videos: { $ref: "#/components/schemas/NullableCount" }
+        max_image_bytes: { $ref: "#/components/schemas/NullableCount" }
+        max_video_bytes: { $ref: "#/components/schemas/NullableCount" }
+        is_active: { type: boolean, description: true reactivates the entity. }
+
+    ContentType:
+      type: string
+      enum: [image/jpeg, image/png, image/webp, video/mp4, video/webm, video/quicktime]
+    ModerationMode:
+      type: string
+      enum: [auto_publish, pre_moderation]
+    ApplicationSettings:
+      type: object
+      required:
+        - tenant_id
+        - application_id
+        - max_images
+        - max_videos
+        - max_image_bytes
+        - max_video_bytes
+        - allowed_content_types
+        - moderation_mode
+        - max_storage_bytes
+        - stored_bytes
+        - reserved_bytes
+      properties:
+        tenant_id: { type: string }
+        application_id: { type: string }
+        max_images: { $ref: "#/components/schemas/NullableCount" }
+        max_videos: { $ref: "#/components/schemas/NullableCount" }
+        max_image_bytes: { $ref: "#/components/schemas/NullableCount" }
+        max_video_bytes: { $ref: "#/components/schemas/NullableCount" }
+        allowed_content_types:
+          type: [array, "null"]
+          items: { $ref: "#/components/schemas/ContentType" }
+        moderation_mode:
+          oneOf:
+            - { $ref: "#/components/schemas/ModerationMode" }
+            - { type: "null" }
+        max_storage_bytes: { $ref: "#/components/schemas/NullableCount" }
+        stored_bytes:
+          type: integer
+          description: Computed SUM of ready and deleting media.
+        reserved_bytes:
+          type: integer
+          description: Computed SUM of live pending uploads.
+    ApplicationSettingsResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/ApplicationSettings" }
+    ApplicationSettingsPut:
+      type: object
+      description: Every field is required; send null to inherit the server default.
+      required:
+        - max_images
+        - max_videos
+        - max_image_bytes
+        - max_video_bytes
+        - allowed_content_types
+        - moderation_mode
+        - max_storage_bytes
+      properties:
+        max_images: { $ref: "#/components/schemas/NullableCount" }
+        max_videos: { $ref: "#/components/schemas/NullableCount" }
+        max_image_bytes: { $ref: "#/components/schemas/NullableCount" }
+        max_video_bytes: { $ref: "#/components/schemas/NullableCount" }
+        allowed_content_types:
+          type: [array, "null"]
+          minItems: 1
+          items: { $ref: "#/components/schemas/ContentType" }
+        moderation_mode:
+          oneOf:
+            - { $ref: "#/components/schemas/ModerationMode" }
+            - { type: "null" }
+        max_storage_bytes: { $ref: "#/components/schemas/NullableCount" }
+
+    ReviewStatus:
+      type: string
+      enum: [pending, published, rejected, hidden, removed]
+    MediaStatus:
+      type: string
+      enum: [pending, ready, invalid, deleting, deleted]
+    ModerationStatus:
+      type: string
+      enum: [none, pending, approved, rejected]
+    Media:
+      type: object
+      required:
+        - id
+        - review_id
+        - kind
+        - status
+        - moderation_status
+        - content_type
+        - size_bytes
+        - width
+        - height
+        - duration_seconds
+        - position
+        - upload_expires_at
+        - created_at
+        - url
+      properties:
+        id: { type: string, format: uuid }
+        review_id: { type: string, format: uuid }
+        kind: { type: string, enum: [image, video] }
+        status: { $ref: "#/components/schemas/MediaStatus" }
+        moderation_status: { $ref: "#/components/schemas/ModerationStatus" }
+        content_type: { $ref: "#/components/schemas/ContentType" }
+        size_bytes: { type: integer, minimum: 1 }
+        width: { type: [integer, "null"] }
+        height: { type: [integer, "null"] }
+        duration_seconds: { type: [number, "null"] }
+        position: { type: integer, minimum: 0 }
+        upload_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        url:
+          type: [string, "null"]
+          description: |
+            Null when the caller may not see the media. With `url_unavailable` set, the URL
+            could not be signed right now; retry the read.
+        url_expires_at:
+          $ref: "#/components/schemas/Timestamp"
+          description: Present on signed URLs.
+        url_unavailable:
+          type: string
+          enum: [signing]
+    MediaResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Media" }
+    UploadTarget:
+      type: object
+      required: [method, url, headers, expires_at]
+      properties:
+        method: { type: string, enum: [PUT] }
+        url:
+          type: string
+          description: Send the bytes here with only `headers`; never the service key.
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Exactly the headers to send. Never contains `Content-Length`; set it yourself.
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+    MediaIntent:
+      type: object
+      required: [kind, content_type, size_bytes]
+      properties:
+        kind: { type: string, enum: [image, video] }
+        content_type: { $ref: "#/components/schemas/ContentType" }
+        size_bytes: { type: integer, minimum: 1 }
+        client_upload_id:
+          type: string
+          maxLength: 100
+          description: Makes the intent safe to retry; a retry replays the same row.
+        position: { type: integer, minimum: 0, default: 0 }
+        width: { type: [integer, "null"], minimum: 1 }
+        height: { type: [integer, "null"], minimum: 1 }
+        duration_seconds: { type: [number, "null"], minimum: 0 }
+    MediaIntentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [media, upload]
+          properties:
+            media: { $ref: "#/components/schemas/Media" }
+            upload:
+              oneOf:
+                - { $ref: "#/components/schemas/UploadTarget" }
+                - { type: "null" }
+    MediaApprove:
+      type: object
+      required: [expected_version, expected_media_version]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        expected_media_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"], maxLength: 500 }
+
+    Review:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - application_id
+        - namespace_type
+        - namespace_id
+        - entity_id
+        - entity_type
+        - external_id
+        - author_id
+        - author_metadata
+        - rating
+        - title
+        - body
+        - status
+        - status_reason
+        - metadata
+        - source_ref
+        - is_verified_purchase
+        - version
+        - media_version
+        - media
+        - media_truncated
+        - published_at
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        application_id: { type: string }
+        namespace_type: { $ref: "#/components/schemas/NullableString" }
+        namespace_id: { $ref: "#/components/schemas/NullableString" }
+        entity_id: { type: string, format: uuid }
+        entity_type: { type: string }
+        external_id: { type: string }
+        author_id:
+          type: string
+          description: The caller's author id; `erased:<hmac>` after erasure.
+        author_metadata: { $ref: "#/components/schemas/JsonObject" }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { $ref: "#/components/schemas/NullableString" }
+        body: { $ref: "#/components/schemas/NullableString" }
+        status: { $ref: "#/components/schemas/ReviewStatus" }
+        status_reason: { $ref: "#/components/schemas/NullableString" }
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        source_ref: { $ref: "#/components/schemas/NullableString" }
+        is_verified_purchase: { type: boolean }
+        version:
+          type: integer
+          minimum: 1
+          description: Bumps on every content or status change.
+        media_version:
+          type: integer
+          minimum: 1
+          description: Bumps on every media state change.
+        media:
+          type: array
+          description: Ready media, at most `OCTOREVIEW_LIST_MEDIA_LIMIT` (default 10).
+          items: { $ref: "#/components/schemas/Media" }
+        media_truncated:
+          type: boolean
+          description: True when more media exist; `GET /reviews/{review_id}/media` returns them all.
+        published_at: { $ref: "#/components/schemas/NullableTimestamp" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    ReviewResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Review" }
+    ReviewList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Review" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    ReviewCreate:
+      type: object
+      description: Send `entity_id`, or `entity_type` with `external_id`, not both.
+      required: [application_id, author_id, rating]
+      properties:
+        application_id: { $ref: "#/components/schemas/ScopeId" }
+        entity_id: { type: string, format: uuid }
+        entity_type:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_.-]{0,99}$"
+        external_id: { type: string, minLength: 1, maxLength: 255 }
+        author_id:
+          type: string
+          maxLength: 255
+          description: Derive it from your own authenticated user, never from client input.
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: [string, "null"], maxLength: 200 }
+        body: { type: [string, "null"], maxLength: 10000 }
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        author_metadata:
+          $ref: "#/components/schemas/JsonObject"
+          description: Display data such as `display_name`; `avatar_url` must be https.
+        source_ref:
+          type: string
+          maxLength: 255
+          description: An order or booking id. Needs `reviews:attest`; set only at creation.
+        is_verified_purchase:
+          type: boolean
+          description: Needs `reviews:attest`.
+    ReviewPatch:
+      type: object
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: [string, "null"], maxLength: 200 }
+        body: { type: [string, "null"], maxLength: 10000 }
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        author_metadata: { $ref: "#/components/schemas/JsonObject" }
+        is_verified_purchase:
+          type: boolean
+          description: Needs `reviews:attest`.
+    ReviewPublish:
+      type: object
+      required: [expected_version, expected_media_version]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        expected_media_version: { type: integer, minimum: 1 }
+        reason: { type: [string, "null"], maxLength: 500 }
+    ModerationReason:
+      type: object
+      properties:
+        reason: { type: [string, "null"], maxLength: 500 }
+
+    Revision:
+      type: object
+      required: [id, review_id, rating, title, body, base_version, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        review_id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { $ref: "#/components/schemas/NullableString" }
+        body: { $ref: "#/components/schemas/NullableString" }
+        base_version:
+          type: integer
+          description: The review version the edit was made against.
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    RevisionApprove:
+      type: object
+      required: [revision_id, expected_version, expected_media_version]
+      properties:
+        revision_id: { type: string, format: uuid }
+        expected_version: { type: integer, minimum: 1 }
+        expected_media_version: { type: integer, minimum: 1 }
+    RevisionReject:
+      type: object
+      required: [revision_id]
+      properties:
+        revision_id: { type: string, format: uuid }
+
+    EraseRequest:
+      type: object
+      required: [application_id, author_id]
+      properties:
+        application_id: { $ref: "#/components/schemas/ScopeId" }
+        author_id: { type: string, maxLength: 255 }
+    EraseResult:
+      type: object
+      required: [reviews_redacted, pending_media_deletes, remaining]
+      properties:
+        reviews_redacted: { type: integer, minimum: 0 }
+        pending_media_deletes:
+          type: integer
+          minimum: 0
+          description: Media moved to `deleting`; `cleanup_media` deletes the objects.
+        remaining:
+          type: integer
+          minimum: 0
+          description: Reviews still to redact; call again while above 0.
+
+    AuditLog:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - application_id
+        - namespace_type
+        - namespace_id
+        - action
+        - aggregate_type
+        - aggregate_id
+        - actor_id
+        - request_id
+        - operation_id
+        - changes
+        - metadata
+        - created_at
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        application_id: { $ref: "#/components/schemas/NullableString" }
+        namespace_type: { $ref: "#/components/schemas/NullableString" }
+        namespace_id: { $ref: "#/components/schemas/NullableString" }
+        action: { type: string }
+        aggregate_type: { type: string }
+        aggregate_id: { type: string }
+        actor_id: { $ref: "#/components/schemas/NullableString" }
+        request_id: { $ref: "#/components/schemas/NullableString" }
+        operation_id: { type: string, format: uuid }
+        changes: { $ref: "#/components/schemas/JsonObject" }
+        metadata: { $ref: "#/components/schemas/JsonObject" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    AuditLogList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AuditLog" }
+        pagination: { $ref: "#/components/schemas/Pagination" }

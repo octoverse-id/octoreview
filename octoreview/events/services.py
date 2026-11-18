@@ -12,6 +12,25 @@ FORBIDDEN_PAYLOAD_FIELDS = frozenset(
 )
 AUTHOR_ERASED = "author.erased"
 
+# Every event type the server emits. `docs/events.md` documents exactly this set and
+# `make openapi-check` compares the two, so an event cannot ship undocumented (spec section 10).
+EVENT_TYPES = frozenset(
+    {
+        "review.created",
+        "review.updated",
+        "review.revision_submitted",
+        "review.status_changed",
+        "review.published",
+        "review.removed",
+        "review_media.ready",
+        "review_media.invalid",
+        "review_media.deleted",
+        "review_media.moderated",
+        "entity.rating_changed",
+        AUTHOR_ERASED,
+    }
+)
+
 
 def build_outbox_event(
     *,
@@ -26,6 +45,8 @@ def build_outbox_event(
     namespace_id: str | None = None,
     metadata: dict | None = None,
 ) -> OutboxEvent:
+    if event_type not in EVENT_TYPES:
+        raise ValueError(f"Unregistered event type {event_type!r}; add it to EVENT_TYPES.")
     if not isinstance(payload, dict):
         raise ValueError("payload must be a JSON object.")
     forbidden = FORBIDDEN_PAYLOAD_FIELDS & set(payload)

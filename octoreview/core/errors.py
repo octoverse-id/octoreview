@@ -175,14 +175,32 @@ def error_response(
     )
 
 
+def lookup_scope(request) -> dict:
+    """The scope a lookup searched, so a 404 says where it looked (docs/spec.md section 11).
+
+    It echoes only the caller's own request, so it reveals nothing about other tenants.
+    """
+
+    scope_context = getattr(request, "scope_context", None)
+    return {
+        "tenant_id": getattr(request, "tenant_id", None),
+        "application_id": getattr(request, "application_id", None),
+        "namespace_type": getattr(scope_context, "namespace_type", None),
+        "namespace_id": getattr(scope_context, "namespace_id", None),
+    }
+
+
 def exception_handler(exc, context):
     request = context.get("request")
 
     if isinstance(exc, DomainError):
+        details = exc.details
+        if exc.code == "not_found" and not details:
+            details = {"scope": lookup_scope(request)}
         return error_response(
             exc.code,
             exc.message,
-            exc.details,
+            details,
             request,
             exc.status_code,
             retry_after=exc.retry_after,
@@ -190,7 +208,11 @@ def exception_handler(exc, context):
 
     if isinstance(exc, Http404 | exceptions.NotFound):
         return error_response(
-            "not_found", NotFoundError.message, {}, request, status.HTTP_404_NOT_FOUND
+            "not_found",
+            NotFoundError.message,
+            {"scope": lookup_scope(request)},
+            request,
+            status.HTTP_404_NOT_FOUND,
         )
 
     if isinstance(exc, exceptions.NotAuthenticated):
