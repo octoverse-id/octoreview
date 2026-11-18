@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 
@@ -15,6 +16,7 @@ from octoreview.core.validators import entity_type_error, external_id_error, jso
 from octoreview.entities import ratings, selectors, services
 from octoreview.entities.models import POLICY_FIELDS, Entity, ModerationMode
 from octoreview.entities.policy import ceiling_errors
+from octoreview.media import selectors as media_selectors
 
 # Summaries change only when a review moves; a short private cache is safe until ETags land
 # after rc.1 (docs/spec.md section 5.3).
@@ -250,7 +252,9 @@ class SettingsSerializer(serializers.Serializer):
 
 def settings_representation(tenant_id: str, application_id: str, row) -> dict:
     values = {field: getattr(row, field, None) for field in services.SETTINGS_FIELDS}
-    return {"tenant_id": tenant_id, "application_id": application_id, **values}
+    # Computed SUMs, not counters (docs/spec.md 7.6): nothing to keep in step or recompute.
+    usage = media_selectors.storage_usage(tenant_id, application_id, now=timezone.now())
+    return {"tenant_id": tenant_id, "application_id": application_id, **values, **usage}
 
 
 @require_scopes(get="settings:read", put="settings:write")

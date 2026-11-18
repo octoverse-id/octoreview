@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Review media on the local backend: upload intents (`POST /api/v1/reviews/{id}/media`) with
+  per-entity image and video limits, the allowed-type list, size caps, `client_upload_id` replay
+  with a fresh upload URL, and the optional per-application `max_storage_bytes` quota (computed
+  `stored_bytes`/`reserved_bytes` on the settings response). Signed local `PUT
+  /api/v1/media-uploads/{token}`; idempotent three-phase `complete` with a lease, magic-byte
+  checks and a grace window; `GET` and `DELETE` media; media `approve`/`reject` with the version
+  guard; media embedded in review responses with per-audience URLs (public, author, moderator)
+  and `media_truncated`; the `media_moderation_status` moderator filter; `GET
+  /api/v1/media-files/{token}` with Range, revocation and `nosniff`/CSP/CORP headers; CORS on the
+  token paths only. `manage.py cleanup_media` (expired uploads, removed reviews, `deleting`
+  retries, staging sweep), `manage.py check_storage` (`make storage-check`), erasure deleting the
+  author's media, and `recompute_ratings` now also rebuilding `ready_media_count`.
 - Reviews: `POST/GET /api/v1/reviews` (auto-creates the entity; `source_ref` and
   `is_verified_purchase` need `reviews:attest`), `GET/PATCH/DELETE /api/v1/reviews/{id}`, publish,
   reject and hide with the `expected_version`/`expected_media_version` guard, pending revisions

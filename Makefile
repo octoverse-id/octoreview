@@ -36,6 +36,9 @@ test-postgres: ## Run the test suite on PostgreSQL in Docker (needs Docker)
 	@command -v docker >/dev/null || { echo "test-postgres needs Docker; install it or use make test" >&2; exit 1; }
 	@./scripts/test-postgres.sh $(PG_CONTAINER) $(PG_PORT) $(PG_URL)
 
+storage-check: ## Round-trip a probe object through the configured storage backend
+	uv run python manage.py check_storage
+
 security: ## Audit locked dependencies for known vulnerabilities (needs network)
 	@./scripts/security-audit.sh
 

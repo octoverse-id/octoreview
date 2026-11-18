@@ -26,3 +26,6 @@ htmlcov/
 .ruff_cache/
 db.sqlite3
 /staticfiles/
+
+# Local media written by the development server (OCTOREVIEW_MEDIA_ROOT=./var/media).
+var/

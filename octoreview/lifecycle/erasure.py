@@ -24,6 +24,7 @@ from octoreview.entities.ratings import apply_delta
 from octoreview.events import services as events
 from octoreview.lifecycle.locks import locked_review
 from octoreview.lifecycle.services import contribution, emit_rating_changed
+from octoreview.media.models import MediaStatus, ReviewMedia
 from octoreview.reviews.models import Review, ReviewRevision, ReviewStatus
 
 BATCH_SIZE = 100
@@ -88,7 +89,7 @@ def _redact_audit_rows(review_id, author_id: str, erased: str, tenant_id: str) -
     AuditLog.objects.filter(tenant_id=tenant_id, actor_id=author_id).update(actor_id=erased)
 
 
-def _erase_one(review_id, author_id: str, ctx: AuditContext) -> None:
+def _erase_one(review_id, author_id: str, ctx: AuditContext) -> int:
     with transaction.atomic(), locked_review(review_id) as (entity, review):
         erased = erased_author_id(review.tenant_id, review.application_id, author_id)
         old_contribution = contribution(review)
@@ -101,9 +102,20 @@ def _erase_one(review_id, author_id: str, ctx: AuditContext) -> None:
         review.status = ReviewStatus.REMOVED
         review.save()
         ReviewRevision.objects.filter(review=review).delete()
+        # Objects are deleted outside the lock by cleanup_media; the rows show `deleting` and
+        # `url: null` at once (docs/spec.md section 9).
+        media_rows = ReviewMedia.objects.select_for_update().filter(
+            review=review, status__in=[MediaStatus.PENDING, MediaStatus.READY]
+        )
+        pending_deletes = media_rows.update(status=MediaStatus.DELETING)
+        if pending_deletes:
+            from octoreview.lifecycle.media import touch_review
+
+            touch_review(review)
         _redact_audit_rows(review.id, author_id, erased, review.tenant_id)
         if apply_delta(entity.id, remove=old_contribution):
             emit_rating_changed(entity, ctx)
+        return pending_deletes
 
 
 def erase_author(
@@ -116,11 +128,14 @@ def erase_author(
             :BATCH_SIZE
         ]
     )
+    pending_media_deletes = 0
     for review_id in batch:
-        _erase_one(review_id, author_id, audit_context)
+        pending_media_deletes += _erase_one(review_id, author_id, audit_context)
     remaining = pending_reviews(tenant_id, application_id, author_id).count()
     result = ErasureResult(
-        reviews_redacted=len(batch), pending_media_deletes=0, remaining=remaining
+        reviews_redacted=len(batch),
+        pending_media_deletes=pending_media_deletes,
+        remaining=remaining,
     )
     if remaining == 0:
         with transaction.atomic():

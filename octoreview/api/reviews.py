@@ -6,7 +6,7 @@ from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 
 from octoreview.core.audit_context import AuditContext
-from octoreview.core.auth import require_permission, require_scopes
+from octoreview.core.auth import has_permission, require_permission, require_scopes
 from octoreview.core.errors import DomainError, NotFoundError
 from octoreview.core.pagination import OctoreviewLimitOffsetPagination
 from octoreview.core.responses import data_response
@@ -19,6 +19,7 @@ from octoreview.core.validators import (
 from octoreview.entities import selectors as entity_selectors
 from octoreview.entities.services import get_or_create_entity
 from octoreview.lifecycle import erasure, services, transitions
+from octoreview.media import selectors as media_selectors
 from octoreview.reviews import selectors
 from octoreview.reviews.models import Review, ReviewRevision
 
@@ -128,7 +129,26 @@ class EraseSerializer(serializers.Serializer):
     author_id = serializers.CharField(max_length=255, trim_whitespace=False)
 
 
-def review_representation(review: Review) -> dict:
+def _represent_page(request, reviews, *, author_path: bool | None = None) -> list[dict]:
+    """Reviews with their embedded media; one media query for the whole page."""
+
+    reviews = list(reviews)
+    if author_path is None:
+        # A list on the author path is already filtered to that author's reviews.
+        author_path = selectors.is_author_path(request)
+    embedded = media_selectors.embedded_media(
+        reviews, moderator=has_permission(request, "reviews:moderate"), author_path=author_path
+    )
+    return [review_representation(review, embedded[review.id]) for review in reviews]
+
+
+def _represent(request, review: Review) -> dict:
+    author_path = selectors.is_author_path_for(request, review)
+    return _represent_page(request, [review], author_path=author_path)[0]
+
+
+def review_representation(review: Review, media: dict | None = None) -> dict:
+    media = media or {"media": [], "media_truncated": False}
     return {
         "id": str(review.id),
         "tenant_id": review.tenant_id,
@@ -150,8 +170,8 @@ def review_representation(review: Review) -> dict:
         "is_verified_purchase": review.is_verified_purchase,
         "version": review.version,
         "media_version": review.media_version,
-        "media": [],
-        "media_truncated": False,
+        "media": media["media"],
+        "media_truncated": media["media_truncated"],
         "published_at": review.published_at.isoformat() if review.published_at else None,
         "created_at": review.created_at.isoformat(),
         "updated_at": review.updated_at.isoformat(),
@@ -183,7 +203,7 @@ def review_collection(request):
     if request.method == "GET":
         paginator = OctoreviewLimitOffsetPagination()
         page = paginator.paginate_queryset(selectors.list_reviews(request), request)
-        return paginator.get_paginated_response([review_representation(r) for r in page])
+        return paginator.get_paginated_response(_represent_page(request, page))
 
     data = _validated(ReviewCreateSerializer, request.data)
     _attest_fields_need_scope(request, data)
@@ -203,19 +223,19 @@ def review_collection(request):
         ),
         ctx,
     )
-    return data_response(review_representation(review), status=status.HTTP_201_CREATED)
+    return data_response(_represent(request, review), status=status.HTTP_201_CREATED)
 
 
 @require_scopes(get="reviews:read", patch="reviews:write", delete="reviews:write")
 @api_view(["GET", "PATCH", "DELETE"])
 def review_detail(request, review_id):
     if request.method == "GET":
-        return data_response(review_representation(selectors.get_review(request, review_id)))
+        return data_response(_represent(request, selectors.get_review(request, review_id)))
     review = selectors.get_review(request, review_id, for_write=True)
     ctx = AuditContext.from_request(request)
     if request.method == "DELETE":
         review = services.transition_review(review.id, transitions.REMOVE, ctx)
-        return data_response(review_representation(review))
+        return data_response(_represent(request, review))
     if "source_ref" in request.data:
         raise DomainError(
             "source_ref is set only when the review is created; create a new review for "
@@ -226,7 +246,7 @@ def review_detail(request, review_id):
     if "is_verified_purchase" in data:
         require_permission(request, "reviews:attest")
     review = services.update_review(review.id, dict(data), ctx)
-    return data_response(review_representation(review))
+    return data_response(_represent(request, review))
 
 
 def _moderate(request, review_id, action):
@@ -244,7 +264,7 @@ def _moderate(request, review_id, action):
         expected_version=data.get("expected_version"),
         expected_media_version=data.get("expected_media_version"),
     )
-    return data_response(review_representation(review))
+    return data_response(_represent(request, review))
 
 
 @require_scopes(post="reviews:moderate")
@@ -299,7 +319,7 @@ def revision_approve(request, review_id):
         expected_version=data["expected_version"],
         expected_media_version=data["expected_media_version"],
     )
-    return data_response(review_representation(review))
+    return data_response(_represent(request, review))
 
 
 @require_scopes(post="reviews:moderate")
@@ -310,7 +330,7 @@ def revision_reject(request, review_id):
     review = services.reject_revision(
         review.id, data["revision_id"], AuditContext.from_request(request)
     )
-    return data_response(review_representation(review))
+    return data_response(_represent(request, review))
 
 
 @require_scopes(post="privacy:erase")
