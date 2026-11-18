@@ -106,7 +106,10 @@ class BearerTokenPermission(BasePermission):
 
         if scope_context not in request.authorized_scope_contexts:
             reason = "namespace_not_granted"
-            if not scope_context.is_global and application_id is None:
+            if application_id is None and all(grant.application_id for grant in scoped):
+                # Every grant is bound to an application, so the request must name one.
+                reason = "application_id_required"
+            elif not scope_context.is_global and application_id is None:
                 reason = "application_required_for_namespace"
             elif not any(grant.application_id in (None, application_id) for grant in scoped):
                 reason = "application_not_granted"

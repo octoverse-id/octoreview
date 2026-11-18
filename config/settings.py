@@ -72,6 +72,8 @@ INSTALLED_APPS = [
     "octoreview.audit",
     "octoreview.events",
     "octoreview.entities",
+    "octoreview.reviews",
+    "octoreview.lifecycle",
 ]
 
 MIDDLEWARE = [

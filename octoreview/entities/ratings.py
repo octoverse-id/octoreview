@@ -57,6 +57,39 @@ def apply_delta(
     return True
 
 
+AGGREGATE_FIELDS = (
+    "rating_count",
+    "rating_sum",
+    *HISTOGRAM_FIELDS.values(),
+    "verified_review_count",
+)
+
+
+def aggregates_from(contributions) -> dict[str, int]:
+    """Aggregate column values for a set of published-review contributions."""
+
+    values = dict.fromkeys(AGGREGATE_FIELDS, 0)
+    for item in contributions:
+        values["rating_count"] += 1
+        values["rating_sum"] += item.rating
+        values[HISTOGRAM_FIELDS[item.rating]] += 1
+        if item.verified:
+            values["verified_review_count"] += 1
+    return values
+
+
+def current_aggregates(entity: Entity) -> dict[str, int]:
+    return {field: getattr(entity, field) for field in AGGREGATE_FIELDS}
+
+
+def replace_aggregates(entity_id, values: dict[str, int]) -> None:
+    """Repair path for `recompute_ratings`: overwrite with recomputed values (caller locks)."""
+
+    Entity.objects.filter(pk=entity_id).update(
+        **{field: values[field] for field in AGGREGATE_FIELDS}
+    )
+
+
 def _round(value: Decimal, places: str) -> float:
     return float(value.quantize(Decimal(places), rounding=ROUND_HALF_UP))
 
