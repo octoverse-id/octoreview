@@ -10,6 +10,8 @@ every target.
 
 - [Spec of record](docs/spec.md): what the service does, one value per item; wins over every other doc
 - [Agent rules](AGENTS.md): product rules, gates and the development pipeline
+- [Architecture](docs/architecture.md): layer map, module ownership and octonomy copy provenance
+- [Environment](.env.example): every setting with a comment
 - [README](README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
