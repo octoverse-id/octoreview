@@ -22,8 +22,9 @@ check "no-namespace-rollout-flags" 'NAMESPACE_WRITE_ENABLED|NAMESPACE_V2_API_ENA
 check "no-sleep-in-tests" 'time\.sleep\(' tests
 
 # entities.ratings.apply_delta is the only writer of rating columns (spec section 4.1).
+# Writes are attribute assignments or .update(...) keywords; filter(...) reads are fine.
 hits=$(grep -rnE --include='*.py' --exclude-dir=migrations \
-  '(rating_count|rating_sum|rating_[1-5]_count|verified_review_count)\s*=[^=]' octoreview \
+  '(\.(rating_count|rating_sum|rating_[1-5]_count|verified_review_count)\s*=[^=])|(update\(.*(rating_count|rating_sum|rating_[1-5]_count|verified_review_count)\s*=)' octoreview \
   | grep -v '^octoreview/entities/ratings.py:' | grep -v '^octoreview/entities/models.py:' || true)
 if [ -n "$hits" ]; then
   while IFS= read -r hit; do echo "rating-columns-single-writer: $hit"; done <<<"$hits"
@@ -31,7 +32,8 @@ if [ -n "$hits" ]; then
 fi
 
 # Review.ready_media_count has one writer, the lifecycle service (spec section 3.5).
-hits=$(grep -rnE --include='*.py' --exclude-dir=migrations 'ready_media_count\s*=[^=]' octoreview \
+hits=$(grep -rnE --include='*.py' --exclude-dir=migrations \
+  '(\.ready_media_count\s*=[^=])|(update\(.*ready_media_count\s*=)' octoreview \
   | grep -v '^octoreview/lifecycle/' | grep -v '^octoreview/reviews/models.py:' || true)
 if [ -n "$hits" ]; then
   while IFS= read -r hit; do echo "ready-media-count-single-writer: $hit"; done <<<"$hits"
