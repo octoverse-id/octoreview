@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "octoreview.service_auth",
     "octoreview.audit",
     "octoreview.events",
+    "octoreview.entities",
 ]
 
 MIDDLEWARE = [
@@ -154,6 +155,28 @@ if OUTBOX_TRANSPORT == "webhook":
         raise ImproperlyConfigured(
             "OCTOREVIEW_OUTBOX_CLAIM_TIMEOUT_SECONDS must be greater than "
             "OCTOREVIEW_WEBHOOK_TIMEOUT_SECONDS; raise the claim timeout."
+        )
+
+# Media policy defaults and ceilings (docs/spec.md section 6.1). A default above its ceiling is a
+# boot error, so every resolved policy is within bounds.
+MEDIA_POLICY_CEILINGS = {
+    "max_images": env_int("OCTOREVIEW_MAX_IMAGES_CEILING", 20, minimum=0),
+    "max_videos": env_int("OCTOREVIEW_MAX_VIDEOS_CEILING", 5, minimum=0),
+    "max_image_bytes": env_int("OCTOREVIEW_MAX_IMAGE_BYTES_CEILING", 52_428_800, minimum=1),
+    "max_video_bytes": env_int("OCTOREVIEW_MAX_VIDEO_BYTES_CEILING", 524_288_000, minimum=1),
+}
+MEDIA_POLICY_DEFAULTS = {
+    "max_images": env_int("OCTOREVIEW_DEFAULT_MAX_IMAGES", 5, minimum=0),
+    "max_videos": env_int("OCTOREVIEW_DEFAULT_MAX_VIDEOS", 1, minimum=0),
+    "max_image_bytes": env_int("OCTOREVIEW_DEFAULT_MAX_IMAGE_BYTES", 10_485_760, minimum=1),
+    "max_video_bytes": env_int("OCTOREVIEW_DEFAULT_MAX_VIDEO_BYTES", 104_857_600, minimum=1),
+}
+for _field, _default in MEDIA_POLICY_DEFAULTS.items():
+    if _default > MEDIA_POLICY_CEILINGS[_field]:
+        raise ImproperlyConfigured(
+            f"OCTOREVIEW_DEFAULT_{_field.upper()} ({_default}) exceeds "
+            f"OCTOREVIEW_{_field.upper()}_CEILING ({MEDIA_POLICY_CEILINGS[_field]}); lower the "
+            "default or raise the ceiling."
         )
 
 # Reserved for webhooks; receivers reject signatures older than this (docs/spec.md section 10).

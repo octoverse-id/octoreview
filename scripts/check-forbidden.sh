@@ -21,5 +21,14 @@ check "no-namespace-rollout-flags" 'NAMESPACE_WRITE_ENABLED|NAMESPACE_V2_API_ENA
 # Tests use an injected clock, never sleeps (spec section 12).
 check "no-sleep-in-tests" 'time\.sleep\(' tests
 
+# entities.ratings.apply_delta is the only writer of rating columns (spec section 4.1).
+hits=$(grep -rnE --include='*.py' --exclude-dir=migrations \
+  '(rating_count|rating_sum|rating_[1-5]_count|verified_review_count)\s*=[^=]' octoreview \
+  | grep -v '^octoreview/entities/ratings.py:' | grep -v '^octoreview/entities/models.py:' || true)
+if [ -n "$hits" ]; then
+  while IFS= read -r hit; do echo "rating-columns-single-writer: $hit"; done <<<"$hits"
+  status=1
+fi
+
 if [ "$status" -eq 0 ]; then echo "check-forbidden OK"; fi
 exit "$status"
