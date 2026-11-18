@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Entities: `PUT /api/v1/entities` (upsert that never reactivates), list, lookup, detail,
+  `PATCH` and deactivation, bounded to the caller's applications and namespace partition, with a
+  namespaced entity winning over a global one under `include_global=true`. Rating summaries
+  (`GET /api/v1/entities/{id}/rating`) and batch summaries (`POST /api/v1/entities/ratings/query`,
+  1-100 ids, constant query count). `GET/PUT /api/v1/applications/{id}/settings` with ceilings and
+  an application-wide grant. Media policy resolution (entity → application → server default).
 - Django project foundation: service keys (`ocr_` prefix, peppered HMAC) with tenant,
   application and namespace grants; the error envelope with `doc_url` and `retryable`; request
   ids validated to 100 characters; limit/offset pagination (max 100, offset cap 10000); the audit
