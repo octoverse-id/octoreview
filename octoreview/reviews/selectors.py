@@ -63,6 +63,17 @@ def is_author_path(request) -> bool:
     )
 
 
+def is_author_path_for(request, review: Review) -> bool:
+    """The author path applies to one review only when that review is the named author's."""
+
+    return is_author_path(request) and review.author_id == request.query_params.get("author_id")
+
+
+# The media layer sits above this one, so the moderation-queue filter names the reverse
+# relation's fields instead of importing ReviewMedia's choices.
+MEDIA_MODERATION_STATUSES = ("none", "pending", "approved", "rejected")
+
+
 def list_reviews(request):
     """The list rules: published by default; other statuses need reviews:moderate, except the
     author path (`author_id` + `include_unpublished=true`)."""
@@ -72,8 +83,7 @@ def list_reviews(request):
     moderator = has_permission(request, "reviews:moderate")
     author_path = is_author_path(request)
     status = params.get("status")
-    # The media moderation queue filter joins this list with the media PR.
-    gated = [name for name in ("has_pending_revision",) if name in params]
+    gated = [name for name in ("has_pending_revision", "media_moderation_status") if name in params]
     if (status and status != ReviewStatus.PUBLISHED and not author_path) or gated:
         if not moderator:
             raise PermissionDeniedError(
@@ -119,6 +129,19 @@ def list_reviews(request):
     pending_revision = _bool_param(request, "has_pending_revision")
     if pending_revision is not None:
         queryset = queryset.filter(pending_revision__isnull=not pending_revision)
+    media_moderation = params.get("media_moderation_status")
+    if media_moderation is not None:
+        if media_moderation not in MEDIA_MODERATION_STATUSES:
+            raise DomainError(
+                details={
+                    "fields": {"media_moderation_status": [f"One of {MEDIA_MODERATION_STATUSES}."]}
+                }
+            )
+        # A subquery instead of a join keeps one row per review without DISTINCT.
+        matching = Review.objects.filter(
+            media__status="ready", media__moderation_status=media_moderation
+        ).values("pk")
+        queryset = queryset.filter(pk__in=matching)
 
     sort = params.get("sort", "newest")
     if sort not in SORTS:

@@ -418,6 +418,10 @@ The OpenAPI document is `docs/openapi.yaml`.
 Every other media item has `url: null`. A URL that cannot be signed is returned as `url: null` with
 `url_unavailable: "signing"`; a bare `null` always means "not visible to you".
 
+On a single-review endpoint (`GET /reviews/{id}`, `GET /reviews/{id}/media` and the media write
+responses), the author path applies only when the `author_id` query parameter equals the review's
+author; on a list it is already filtered to that author.
+
 ### 5.3 Caching
 
 - **Until `v1.0.0-rc.1`:** rating summaries, batch summaries and review lists and details send
@@ -546,13 +550,16 @@ width?, height?, duration_seconds?}`.
 3. **One short transaction, in lock order.**
    - Lock ApplicationSettings, only when `max_storage_bytes` is set.
    - Lock the review.
-   - A retry with the same non-deleted `client_upload_id` returns the existing pending row.
+   - A retry with the same non-deleted `client_upload_id` replays the existing row (step 4).
    - Count slots (6.3).
    - When a quota is set, check `stored_bytes + reserved_bytes + size_bytes <= max_storage_bytes`
      (7.6), else 409 `storage_quota_exceeded`.
    - Insert the `pending` row with `upload_expires_at`.
 4. **Respond** 201 with `{"data": {"media": ..., "upload": {"method": "PUT", "url", "headers",
-   "expires_at"}}}`.
+   "expires_at"}}}`. A replay answers 200 with the same shape. The first response may have been
+   lost, and it carried the only upload URL, so a replay of a `pending` row re-signs a URL for the
+   same staging key, valid until the row's `upload_expires_at`. A replay of a row that is no longer
+   uploadable (completed, or past `upload_expires_at`) has `upload: null`.
 
 The upload target depends on the backend:
 - **s3:** the presigned PUT signs `Content-Type` and `Content-Length`.
@@ -859,6 +866,10 @@ Errors on the local token paths carry CORS headers.
 
 - **Lock order.** One helper takes locks in the order ApplicationSettings → Entity → Review →
   ReviewMedia (ascending id within a type), and tracks ownership in a context variable.
+- **Own rows only.** A `select_for_update` whose query joins another table (through
+  `select_related` or a filter) passes `of=("self",)`. PostgreSQL's `FOR UPDATE` otherwise locks
+  the joined rows too, in one statement, which skips the order above. A `make check` grep gate
+  forbids `select_for_update` chained with `select_related` without `of=`.
 - **ApplicationSettings.** Locked only by a quota-set intent and a quota-set phase 3. No
   transaction locks ApplicationSettings after a Review.
 - **No network under locks.** No network call (signing, stat, read, copy, delete) runs inside a

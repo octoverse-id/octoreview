@@ -31,6 +31,16 @@ if [ -n "$hits" ]; then
   status=1
 fi
 
+# A row lock joined to another table locks both rows unless `of=` names the table, which breaks
+# the documented lock order (spec section 12).
+hits=$(grep -rnE --include='*.py' --exclude-dir=migrations \
+  'select_for_update\(([^o)]|o[^f])*\)\.select_related|select_related\([^)]*\)\.select_for_update\(([^o)]|o[^f])*\)' \
+  octoreview || true)
+if [ -n "$hits" ]; then
+  while IFS= read -r hit; do echo "lock-only-own-rows: $hit"; done <<<"$hits"
+  status=1
+fi
+
 # Review.ready_media_count has one writer, the lifecycle service (spec section 3.5).
 hits=$(grep -rnE --include='*.py' --exclude-dir=migrations \
   '(\.ready_media_count\s*=[^=])|(update\(.*ready_media_count\s*=)' octoreview \

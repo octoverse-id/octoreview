@@ -73,11 +73,14 @@ INSTALLED_APPS = [
     "octoreview.events",
     "octoreview.entities",
     "octoreview.reviews",
+    "octoreview.media",
     "octoreview.lifecycle",
+    "corsheaders",
 ]
 
 MIDDLEWARE = [
     "octoreview.core.middleware.RequestContextMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
@@ -180,6 +183,65 @@ for _field, _default in MEDIA_POLICY_DEFAULTS.items():
             f"OCTOREVIEW_{_field.upper()}_CEILING ({MEDIA_POLICY_CEILINGS[_field]}); lower the "
             "default or raise the ceiling."
         )
+
+# Storage and media (docs/spec.md sections 7, 8 and 15).
+STORAGE_BACKEND = os.getenv("OCTOREVIEW_STORAGE_BACKEND", "local")
+# The s3 adapter lands in its own PR; azure and gcs arrive in release line 2.
+SUPPORTED_STORAGE_BACKENDS = ("local",)
+if STORAGE_BACKEND not in SUPPORTED_STORAGE_BACKENDS:
+    raise ImproperlyConfigured(
+        f"OCTOREVIEW_STORAGE_BACKEND must be one of {', '.join(SUPPORTED_STORAGE_BACKENDS)}; "
+        "pick one."
+    )
+STORAGE_LOCATION_ID = os.getenv("OCTOREVIEW_STORAGE_LOCATION_ID", "")
+if not STORAGE_LOCATION_ID:
+    raise ImproperlyConfigured(
+        "OCTOREVIEW_STORAGE_LOCATION_ID is required; set a stable id for this bucket or "
+        "directory, for example 'local-dev' or 'aws-ap-southeast-3-reviews'."
+    )
+PUBLIC_BASE_URL = os.getenv("OCTOREVIEW_PUBLIC_BASE_URL", "").rstrip("/")
+MEDIA_ROOT = os.getenv("OCTOREVIEW_MEDIA_ROOT", "")
+MEDIA_TOKEN_SECRET = os.getenv("OCTOREVIEW_MEDIA_TOKEN_SECRET", "")
+MEDIA_TOKEN_SECRET_PREVIOUS = os.getenv("OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS", "")
+if STORAGE_BACKEND == "local":
+    # Signs the local upload and download URLs; like the other secrets, it has a development
+    # fallback only while DEBUG is on.
+    MEDIA_TOKEN_SECRET = require_secret(
+        "OCTOREVIEW_MEDIA_TOKEN_SECRET", debug_default="local-dev-media-token-secret"
+    )
+    for _name, _value, _fix in (
+        ("OCTOREVIEW_PUBLIC_BASE_URL", PUBLIC_BASE_URL, "set the server's absolute base URL"),
+        ("OCTOREVIEW_MEDIA_ROOT", MEDIA_ROOT, "set a writable directory for media"),
+    ):
+        if not _value:
+            raise ImproperlyConfigured(
+                f"{_name} is required with OCTOREVIEW_STORAGE_BACKEND=local; {_fix}."
+            )
+MEDIA_PUBLIC_BASE_URL = os.getenv("OCTOREVIEW_MEDIA_PUBLIC_BASE_URL", "").rstrip("/")
+UPLOAD_URL_TTL_SECONDS = env_int("OCTOREVIEW_UPLOAD_URL_TTL_SECONDS", 900, minimum=60)
+MEDIA_URL_TTL_SECONDS = env_int("OCTOREVIEW_MEDIA_URL_TTL_SECONDS", 900, minimum=60)
+COMPLETE_LEASE_SECONDS = env_int("OCTOREVIEW_COMPLETE_LEASE_SECONDS", 900, minimum=30)
+MAX_CONCURRENT_COMPLETIONS = env_int("OCTOREVIEW_MAX_CONCURRENT_COMPLETIONS", 4, minimum=1)
+LIST_MEDIA_LIMIT = env_int("OCTOREVIEW_LIST_MEDIA_LIMIT", 10, minimum=1)
+MEDIA_CORP = os.getenv("OCTOREVIEW_MEDIA_CORP", "cross-origin")
+if MEDIA_CORP not in {"cross-origin", "same-site", "same-origin"}:
+    raise ImproperlyConfigured(
+        "OCTOREVIEW_MEDIA_CORP must be cross-origin, same-site or same-origin; pick one."
+    )
+# Uploads may still complete for this long after upload_expires_at (docs/spec.md section 6.3).
+UPLOAD_GRACE_SECONDS = 300
+# cleanup_media waits this long past the grace before deleting an abandoned upload.
+CLEANUP_DELAY_SECONDS = 600
+
+# Local media endpoints answer CORS for browser uploads and downloads; nothing else does.
+CORS_ALLOWED_ORIGINS = env_list("OCTOREVIEW_MEDIA_CORS_ORIGINS")
+CORS_URLS_REGEX = r"^/api/v1/media-(uploads|files)/"
+CORS_ALLOW_METHODS = ("GET", "PUT", "OPTIONS")
+CORS_ALLOW_HEADERS = ("content-type", "content-length", "range")
+CORS_EXPOSE_HEADERS = ("content-length", "content-range", "x-request-id")
+
+# Covering indexes are PostgreSQL-only; SQLite simply skips them (docs/spec.md section 3.10).
+SILENCED_SYSTEM_CHECKS = ["models.W040"]
 
 # Reserved for webhooks; receivers reject signatures older than this (docs/spec.md section 10).
 WEBHOOK_SIGNATURE_TOLERANCE_SECONDS = 300

@@ -8,7 +8,7 @@ from octoreview.lifecycle.recompute import recompute_ratings
 
 
 class Command(BaseCommand):
-    help = "Recompute entity rating aggregates from published reviews; --check only reports."
+    help = "Recompute entity rating aggregates and review ready_media_count; --check only reports."
 
     def add_arguments(self, parser):
         parser.add_argument(
