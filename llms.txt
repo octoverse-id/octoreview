@@ -8,6 +8,7 @@ every target.
 
 ## Docs
 
+- [Spec of record](docs/spec.md): what the service does, one value per item; wins over every other doc
 - [Agent rules](AGENTS.md): product rules, gates and the development pipeline
 - [README](README.md)
 - [Contributing](CONTRIBUTING.md)

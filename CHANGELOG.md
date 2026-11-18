@@ -9,6 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `docs/spec.md`, the spec of record for release line 1, with a contradiction table and the spec
+  decisions it settles.
 - Repository bootstrap: Apache-2.0 license, governance files (AGENTS.md, CONTRIBUTING,
   SECURITY, Code of Conduct), issue forms, PR template, Dependabot with auto-merge for minor and
   patch updates, `llms.txt` with a link check, rulesets mirror and export script, and a CI

@@ -11,8 +11,11 @@ This repository was bootstrapped with governance files and a CI skeleton. The ap
 work. Release line 1 targets the first consumer, Mbizmarket (Go, PHP and JavaScript stack, media
 on AWS S3 or an S3-compatible store).
 
-The first feature PR writes `docs/spec.md`, the spec of record. Once it exists, AGENTS.md and
-every doc link to it instead of restating it, and it wins over any other description.
+[`docs/spec.md`](docs/spec.md) is the spec of record: domain model, state machines, API, upload
+protocol, events, errors, configuration and CI rules, plus a contradiction table for every value
+the plan stated more than once. It wins over any other description, this file included; a change
+of behavior changes the spec first, in the same PR as the code. Other docs link to it instead of
+restating it.
 
 ## Product Rules
 
