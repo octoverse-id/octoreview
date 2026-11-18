@@ -1,8 +1,20 @@
 version: 2
 updates:
-  # The uv block (versioning-strategy: lockfile-only, minor+patch grouped) lands in the
-  # PR that adds this repository's first manifest; Dependabot errors on an ecosystem with no
-  # manifest. dependabot-auto-merge.yml already allows `uv` for that day.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    # Bumps uv.lock only; widening a pyproject range stays a reviewed change.
+    versioning-strategy: lockfile-only
+    groups:
+      python-packages:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: "github-actions"
     directories:
       - "/"

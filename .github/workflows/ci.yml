@@ -32,38 +32,86 @@ jobs:
           "$(go env GOPATH)/bin/actionlint" -color
       - name: Check llms.txt links
         run: make llms-check
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Ruff lint and format check
+        run: make lint
 
   checks:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'checks' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Django checks, migration drift, import layers and grep gates
+        run: make checks
 
   security:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'security' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Audit locked dependencies
+        run: make security
 
   test-sqlite:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'test-sqlite' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Run the suite on SQLite
+        run: make test
 
   test-postgres:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: octoreview
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/octoreview
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'test-postgres' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+      - name: Run the suite on PostgreSQL
+        # Row-lock concurrency, varchar width and partial-index tests only run here.
+        run: uv run pytest
 
   storage-emulators:
     # octoreview:placeholder

@@ -14,3 +14,15 @@ code-review/*
 # Local agent tooling state
 .omc/
 .gstack/
+
+# Python and test artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+db.sqlite3
+/staticfiles/
