@@ -42,11 +42,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# A fixed unprivileged user, for clusters that enforce runAsNonRoot. The media directory is the
-# only path it writes: the local backend's OCTOREVIEW_MEDIA_ROOT (mount a volume there).
+# A fixed unprivileged user, for clusters that enforce runAsNonRoot. It writes only under
+# /var/lib/octoreview: `media` is the local backend's OCTOREVIEW_MEDIA_ROOT (mount a volume
+# there), and `dev` holds the compose stack's .octoreview-dev.env. A named volume mounted on
+# either inherits this ownership.
 RUN groupadd --system --gid 1001 app \
     && useradd --system --uid 1001 --gid app --no-create-home app \
-    && install -d -o app -g app /var/lib/octoreview/media
+    && install -d -o app -g app /var/lib/octoreview/media /var/lib/octoreview/dev
 
 COPY --from=builder /opt/venv /opt/venv
 # Source stays root-owned and read-only to the app user (.dockerignore keeps local state out).
