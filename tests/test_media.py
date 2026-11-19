@@ -765,6 +765,41 @@ def test_finalize_refuses_a_changed_file():
     backend.delete("_staging/t/a/probe")
 
 
+def test_complete_publishes_bytes_an_earlier_attempt_already_copied(api_client, headers, admin):
+    """An attempt that copied and then died left the final file; it is validated, not replaced."""
+
+    review = create_review(api_client, headers, admin)
+    data = intent(api_client, headers, admin, review["id"]).json()["data"]
+    assert put(APIClient(), data["upload"]["url"], PNG).status_code == 204
+    row = ReviewMedia.objects.select_related("review").get(pk=data["media"]["id"])
+    final = files.final_key(
+        row.tenant_id, row.application_id, row.review.entity_id, row.review_id, row.id, "png"
+    )
+    path_of(final).parent.mkdir(parents=True, exist_ok=True)
+    path_of(final).write_bytes(PNG)
+    done = complete(api_client, headers, admin, review["id"], data["media"]["id"])
+    assert done.status_code == 200, done.json()
+    row.refresh_from_db()
+    assert row.storage_key == final
+    assert path_of(final).read_bytes() == PNG
+
+
+def test_an_invalid_earlier_copy_is_rejected_not_served(api_client, headers, admin):
+    review = create_review(api_client, headers, admin)
+    data = intent(api_client, headers, admin, review["id"]).json()["data"]
+    assert put(APIClient(), data["upload"]["url"], PNG).status_code == 204
+    row = ReviewMedia.objects.select_related("review").get(pk=data["media"]["id"])
+    final = files.final_key(
+        row.tenant_id, row.application_id, row.review.entity_id, row.review_id, row.id, "png"
+    )
+    path_of(final).parent.mkdir(parents=True, exist_ok=True)
+    path_of(final).write_bytes(JPEG)  # same size, wrong type
+    done = complete(api_client, headers, admin, review["id"], data["media"]["id"])
+    assert done.status_code == 422
+    assert done.json()["error"]["details"]["reason"] == "type_mismatch"
+    assert not path_of(final).exists()
+
+
 def test_check_storage_round_trip():
     out = io.StringIO()
     call_command("check_storage", stdout=out)

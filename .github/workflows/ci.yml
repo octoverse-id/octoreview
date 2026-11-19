@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --extra s3
       - name: Django checks, migration drift, import layers and grep gates
         run: make checks
 
@@ -79,7 +79,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --extra s3
       - name: Run the suite on SQLite
         run: make test
 
@@ -108,18 +108,27 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --extra s3
       - name: Run the suite on PostgreSQL
         # Row-lock concurrency, varchar width and partial-index tests only run here.
         run: uv run pytest
 
   storage-emulators:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'storage-emulators' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev --extra s3
+      - name: S3 tests and check_storage against the emulator
+        # Starts the digest-pinned RustFS image named by S3_IMAGE in the Makefile, then runs the
+        # storage contract suite, the media API on s3 (with a 500 MiB completion) and
+        # check_storage. Azurite and fake-gcs-server join this job in release line 2.
+        run: make test-storage
 
   compose-quickstart:
     # octoreview:placeholder

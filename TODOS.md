@@ -131,13 +131,13 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
 - **Status (2026-11-18):** not triggered. The owner corrected the first consumer to Mbizmarket
   (Go, PHP and JavaScript), so the earlier "trigger fired" note and gate item q2 are withdrawn.
 
-### PLT-7: PHP 7.4 compatibility line — PENDING OWNER ANSWER
+### PLT-7: PHP 7.4 compatibility line — CLOSED
 - **What:** A rector-generated `support/php7.4` 1.x line, as octonomy-php built.
 - **Why:** octonomy-php's one known prospect runs PHP 7.4.
-- **Effort:** human M / CC S. **Priority:** P3. **Trigger:** owner confirms a PHP 7.4 consumer.
-- **Status (2026-11-18):** Mbizmarket, the first consumer, runs PHP at an unconfirmed version;
-  gate rev 3 item q3 asked; the owner answered q3c (not sure yet), so the M2 kickoff issue asks
-  again. A 7.4-8.1 answer moves this item into release line 1 before PHP SDK `0.1.0`.
+- **Effort:** human M / CC S. **Priority:** P3. **Trigger:** a consumer on PHP below 8.2 commits
+  to integrate.
+- **Status (2026-11-19):** closed. The owner confirmed that Mbizmarket's lowest PHP version is 8.2,
+  so octoreview-php ships one line requiring PHP 8.2 or later.
 
 ## Added by the Eng review (2026-11-18)
 
@@ -200,3 +200,15 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
   line-1 keys are server-side, so the risk is low.
 - **Effort:** human S / CC S. **Priority:** P3. **Trigger:** a consumer issues read keys to a
   less-trusted surface.
+
+## Added by the s3 backend (2026-11-19)
+
+### PLT-14: Attempt-key fallback for stores without conditional copy — DEFERRED
+- **What:** For a store that ignores `CopySourceIfMatch`, copy to a per-attempt final key
+  (`{media_id}-{attempt_id}.{ext}`) persisted before the copy, and let `cleanup_media` delete the
+  attempt keys no row committed (`docs/spec.md` 7.4, Eng N4).
+- **Why:** Without it such a store would publish whatever the staging object holds at copy time.
+- **Effort:** human M / CC S. **Priority:** P3. **Trigger:** a consumer's store fails
+  `check_storage` at `conditional_copy`.
+- **Status (2026-11-19):** not triggered. The week-1 spike found conditional copy on RustFS, MinIO
+  and versitygw, and AWS S3 documents it (`docs/storage.md`).

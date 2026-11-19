@@ -49,7 +49,10 @@ def _unb64(text: str) -> bytes:
 
 
 def _secrets() -> dict[str, str]:
-    secrets = {"c": settings.MEDIA_TOKEN_SECRET}
+    # An empty secret would make every token forgeable; it is skipped, never used for verifying.
+    secrets = {}
+    if settings.MEDIA_TOKEN_SECRET:
+        secrets["c"] = settings.MEDIA_TOKEN_SECRET
     if settings.MEDIA_TOKEN_SECRET_PREVIOUS:
         secrets["p"] = settings.MEDIA_TOKEN_SECRET_PREVIOUS
     return secrets
@@ -61,6 +64,8 @@ def _sign(secret: str, purpose: str, payload: str) -> str:
 
 
 def _issue(purpose: str, claims: dict) -> str:
+    if not settings.MEDIA_TOKEN_SECRET:
+        raise RuntimeError("OCTOREVIEW_MEDIA_TOKEN_SECRET is empty; local media tokens need it.")
     payload = _b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode())
     return f"c.{payload}.{_sign(settings.MEDIA_TOKEN_SECRET, purpose, payload)}"
 

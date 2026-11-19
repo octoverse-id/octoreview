@@ -822,7 +822,8 @@ paths:
       summary: Local backend only. The target of a local `upload.url`.
       description: |
         Reached through `upload.url`, never built by hand. Requires `Content-Length`; chunked
-        bodies get 411. CSRF does not apply; the signed token is the credential.
+        bodies get 411. CSRF does not apply; the signed token is the credential. On a cloud
+        backend the path answers 404: `upload.url` is a presigned store URL there.
       security: []
       requestBody:
         required: true
@@ -837,6 +838,7 @@ paths:
         "204":
           description: The bytes are staged; call complete.
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "405": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Conflict" }
         "410": { $ref: "#/components/responses/Gone" }
@@ -856,7 +858,8 @@ paths:
         A `public` URL stops working once the media is no longer publicly visible; `author` and
         `moderator` URLs stop once it is deleting or deleted (404). Sends
         `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`
-        and `Cross-Origin-Resource-Policy`.
+        and `Cross-Origin-Resource-Policy`. On a cloud backend the path answers 404: media `url`
+        values are presigned store URLs there.
       security: []
       parameters:
         - name: Range

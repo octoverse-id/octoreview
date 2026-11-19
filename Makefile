@@ -8,12 +8,16 @@ PG_CONTAINER ?= octoreview-test-postgres
 PG_PORT ?= 55432
 PG_URL ?= postgres://postgres:postgres@localhost:$(PG_PORT)/octoreview
 PYTEST_SETTINGS := DJANGO_SETTINGS_MODULE=config.settings_pytest
+# The S3-compatible emulator for `make test-storage` (docs/storage.md, "Emulator").
+S3_CONTAINER ?= octoreview-test-s3
+S3_PORT ?= 59000
+S3_IMAGE ?= rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
-install: ## Install the project and dev dependencies with uv
-	uv sync --extra dev
+install: ## Install the project, dev dependencies and the s3 extra with uv
+	uv sync --extra dev --extra s3
 
 lint: ## Ruff lint and format check
 	uv run ruff check .
@@ -36,6 +40,10 @@ test: ## Run the test suite on SQLite
 test-postgres: ## Run the test suite on PostgreSQL in Docker (needs Docker)
 	@command -v docker >/dev/null || { echo "test-postgres needs Docker; install it or use make test" >&2; exit 1; }
 	@./scripts/test-postgres.sh $(PG_CONTAINER) $(PG_PORT) $(PG_URL)
+
+test-storage: ## Run the S3 tests and check_storage against an S3-compatible emulator (needs Docker)
+	@command -v docker >/dev/null || { echo "test-storage needs Docker; install it" >&2; exit 1; }
+	@./scripts/test-storage.sh $(S3_CONTAINER) $(S3_PORT) $(S3_IMAGE)
 
 openapi-check: ## Check docs/openapi.yaml, errors.md, events.md and sdk-surface.yaml against the server
 	$(PYTEST_SETTINGS) uv run python manage.py check_contract
@@ -63,10 +71,10 @@ placeholder-check: ## Fail while any bootstrap CI placeholder job remains
 
 check: lint checks llms-check test ## Fast gate (toolchain only)
 
-release-check: check test-postgres placeholder-check ## Full pre-release gate (fails while placeholders remain)
+release-check: check test-postgres test-storage placeholder-check ## Full pre-release gate (fails while placeholders remain)
 
 export-rulesets: ## Export the live rulesets into .github/rulesets/ (needs gh with repo admin)
 	@./scripts/export-rulesets.sh
 
-.PHONY: help install lint format checks test test-postgres security llms-check actionlint \
+.PHONY: help install lint format checks test test-postgres test-storage security llms-check actionlint \
 	placeholder-check check release-check export-rulesets

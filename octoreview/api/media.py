@@ -180,12 +180,20 @@ def _token_error(request, exc, purpose: str):
     )
 
 
+def _not_served(request):
+    # Cloud backends hand out presigned URLs; these paths exist only for the local backend, and
+    # its token secret is not configured on any other (docs/spec.md section 7.5).
+    return json_error(request, "not_found", "This deployment does not serve media URLs.", 404)
+
+
 @csrf_exempt
 def media_upload(request, token):
     """PUT the bytes of a pending media item (docs/spec.md section 7.5)."""
 
     if request.method != "PUT":
         return json_error(request, "method_not_allowed", "Use PUT to upload.", 405)
+    if not files.serves_token_urls():
+        return _not_served(request)
     try:
         claims = tokens.verify(token, tokens.UPLOAD, now=timezone.now())
     except (tokens.TokenInvalid, tokens.TokenExpired) as exc:
@@ -282,6 +290,8 @@ def media_file(request, token):
 
     if request.method not in ("GET", "HEAD"):
         return json_error(request, "method_not_allowed", "Use GET to download.", 405)
+    if not files.serves_token_urls():
+        return _not_served(request)
     try:
         claims = tokens.verify(token, tokens.DOWNLOAD, now=timezone.now())
     except (tokens.TokenInvalid, tokens.TokenExpired) as exc:

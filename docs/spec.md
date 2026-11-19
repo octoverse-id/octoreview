@@ -509,14 +509,16 @@ The storage protocol lives in `octoreview.media.storage`:
 create_upload(key, content_type, size_bytes, expires_in) -> UploadTarget(method, url, headers, expires_at)
 stat(key) -> ObjectInfo(size, content_type, version) | None     # version = ETag or generation
 read_head(key, n, if_version) -> bytes
-finalize(staging_key, final_key, content_type, if_version)       # conditional copy (7.4)
+finalize(staging_key, final_key, content_type, if_version)       # conditional copy, never overwrites (7.4)
 delete(key)
 download_url(key, expires_in) -> str
 supports_conditional_copy: bool
 ```
 
-One shared contract suite runs against every backend: local, MinIO and, in line 2, Azurite and
-fake-gcs-server.
+One shared contract suite runs against every backend: local, the S3-compatible CI emulator
+(RustFS; [`storage.md`](storage.md) records the spike that chose it) and, in line 2, Azurite and
+fake-gcs-server. [`storage.md`](storage.md) is the operator guide: IAM policy, bucket CORS,
+lifecycle rules and compatible stores.
 
 ### 7.2 Keys
 
@@ -524,14 +526,15 @@ fake-gcs-server.
 | --- | --- |
 | Staging | `_staging/{tenant_id}/{application_id}/{media_id}` |
 | Final | `media/{tenant_id}/{application_id}/{entity_id}/{review_id}/{media_id}.{ext}` |
-| Fallback attempt (backends without conditional copy only) | `media/{tenant_id}/{application_id}/{entity_id}/{review_id}/{media_id}-{attempt_id}.{ext}` |
+| Fallback attempt (deferred with the fallback, TODOS PLT-14) | `media/{tenant_id}/{application_id}/{entity_id}/{review_id}/{media_id}-{attempt_id}.{ext}` |
 
 - Tenant and application ids are validated at the API boundary and must start with an
   alphanumeric character, so neither can be `_staging` or `media`.
 - Every other segment is a server UUID, and `ext` comes from the type map (6.2), never from a
   caller filename.
-- Bucket lifecycle rules expire `_staging/` after 1 day. The MinIO init container creates the rule,
-  and `check_storage` warns when it is missing.
+- Bucket lifecycle rules expire `_staging/` after 1 day. The compose S3 emulator's setup creates the
+  rule, `check_storage` warns when it is missing, and it fails on any expiration rule that covers
+  `media/`.
 
 ### 7.3 Intent
 
@@ -592,7 +595,13 @@ the media.
   with server-chosen metadata. S3 uses one `CopyObject` with `CopySourceIfMatch` and
   `MetadataDirective=REPLACE` (no multipart copy: S3 allows 5 GiB per copy and the ceiling is
   500 MiB). GCS uses `if_source_generation_match` and Azure `source_etag` (line 2). Local validates
-  the staged file and then runs `os.replace` onto the final path.
+  the staged file and then hard-links it onto the final path.
+- **A published object is never overwritten.** The copy also carries `If-None-Match: *` (local:
+  `link(2)`, which refuses an existing name). A copy that outlives its lease, while another attempt
+  publishes, therefore cannot replace those bytes. When the final key already holds an object (an
+  earlier attempt copied and then lost its lease or died), phase 2 validates that object (size,
+  then magic bytes) instead and publishes it, or rejects it as below. The S3 copy client never
+  retries on its own; the client repeats `complete`, which takes a fresh lease.
 - A failed precondition (a re-PUT changed the staging object) returns 409 `upload_changed`. The
   lease is released, the row stays `pending`, and the client runs `complete` again.
 - A storage error returns 503 `storage_unavailable` with `Retry-After`, `details.backend` and
@@ -618,10 +627,12 @@ response is 422 `media_rejected` with `details.reason`, one of `size_mismatch`, 
 per process; beyond that the request gets 503 `too_many_completions` with `Retry-After`. The image
 runs gunicorn `gthread` with `GUNICORN_THREADS` (default 8) above that cap.
 
-**Fallback.** A backend whose `supports_conditional_copy` is false (decided by the week-1 spike)
-uses the fallback attempt key. The attempt id and target key are persisted before the copy, and
-`cleanup_media` lists `{media_id}-*` and deletes the keys no row committed. AWS S3 and MinIO are
-expected to support conditional copy; the spike result is recorded in `docs/storage.md`.
+**Conditional copy is required.** The week-1 spike ([`storage.md`](storage.md)) found conditional
+copy on every store it ran (RustFS, MinIO and versitygw), and AWS S3 documents it, so line 1 ships
+no fallback. `check_storage` fails at its `conditional_copy` step on a store that ignores
+`CopySourceIfMatch`, and such a store is unsupported. The fallback (a random attempt id and target
+key persisted before the copy, and `cleanup_media` deleting the `{media_id}-*` keys no row
+committed) is deferred (TODOS PLT-14).
 
 **Proxies.** `docs/deployment.md` documents ingress and load-balancer idle timeouts (often 60 s).
 A retry after a proxy 504 meets `complete_in_progress` until the lease ends.
@@ -694,17 +705,19 @@ and recommends a separate media host.
   so a moderator can reverse the decision.
 - `deleting` rows are retried until the delete succeeds; then the row becomes `deleted` and
   `review_media.deleted` is emitted.
-- Also sweeps local staging files by mtime (older than 1 day), and fallback attempt keys (7.4).
+- Also sweeps local staging files by mtime (older than 1 day). Cloud staging relies on the bucket
+  lifecycle rule (7.2).
 - Continues past per-object errors and exits 1, listing the failed keys on stderr.
 
 ### 7.8 Credentials
 
 - **S3.** Uses the boto3 default credential chain (IRSA or instance role, or access keys).
-  Credential expiry is read through one adapter around botocore's credential object.
+  Credential expiry is read through one adapter around botocore's credential object, after
+  botocore's own refresh. The SigV4 presign cap is 7 days.
 - **URL lifetime.** Every signed URL lives `min(configured TTL, backend cap, credential expiry -
-  60 s)`. When less than 60 s of credential life remains, the request gets 503
+  60 s)`. When that lifetime would be under 60 s, the request gets 503
   `storage_credentials_expiring` with `Retry-After`. `upload_expires_at` is computed this way at
-  signing time and returned to the SDKs.
+  signing time and returned to the SDKs, and a replayed intent's URL is capped the same way.
 - **Line 2.** Azure uses `OCTOREVIEW_STORAGE_AZURE_SAS_MODE=account_key|user_delegation`: SAS TTL
   is capped at 10 minutes, and user-delegation keys refresh when less than max(upload TTL, read
   TTL) + 5 minutes remain. GCS uses `OCTOREVIEW_STORAGE_GCS_SIGNING=key_file|iam`: V4 URLs sign
@@ -858,9 +871,13 @@ Errors on the local token paths carry CORS headers.
 - Every `ImproperlyConfigured` message names the variable and ends with the fix command (for
   example the secret generator, `uv sync --extra s3`, or the valid backend list).
 - `manage.py check_storage` (`make storage-check`) runs a real PUT to an upload target, then
-  `stat`, `read_head`, `finalize`, a GET through `download_url`, and deletes both keys. It names the
-  failing step, sends a CORS preflight for each `OCTOREVIEW_MEDIA_CORS_ORIGINS` origin, and warns
-  about a missing staging lifecycle rule.
+  `stat`, `read_head`, `finalize`, a GET through `download_url`, and deletes both keys, naming the
+  failing step. On a cloud backend the PUT and GET are real HTTP through the signed URLs, and it
+  also proves that a missing key answers 404, that a copy of a stale version is refused, and that
+  the copy sets the server-chosen content type. It warns when the store accepts an oversize body,
+  when the bucket's CORS rule refuses an `OCTOREVIEW_MEDIA_CORS_ORIGINS` origin, and when no
+  lifecycle rule expires `_staging/`; it fails on a rule that expires `media/`. The steps are
+  listed in [`storage.md`](storage.md).
 
 ## 12. Concurrency and transactions
 
@@ -925,7 +942,7 @@ Errors on the local token paths carry CORS headers.
 | `seed` (`make seed`) | demo tenant, application and service key; prints the key once and a working `curl` for `POST /api/v1/reviews` |
 
 The compose stack seeds idempotently when `OCTOREVIEW_DEMO_SEED=1` and DEBUG is on, and the
-backend is `local` or the compose MinIO:
+backend is `local` or the compose S3 emulator:
 - It writes `.octoreview-dev.env` (`OCTOREVIEW_BASE_URL`, `OCTOREVIEW_API_KEY`,
   `OCTOREVIEW_TENANT_ID`, `OCTOREVIEW_APPLICATION_ID`) into a named volume, and `make dev-env`
   copies it out as the invoking user.
@@ -947,7 +964,8 @@ backend is `local` or the compose MinIO:
 | `OCTOREVIEW_MEDIA_ROOT` | required for `local` | |
 | `OCTOREVIEW_MEDIA_TOKEN_SECRET`, `OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS` | required for `local` / optional | |
 | `OCTOREVIEW_STORAGE_S3_BUCKET`, `OCTOREVIEW_STORAGE_S3_REGION` | required for `s3` | |
-| `OCTOREVIEW_STORAGE_S3_ENDPOINT_URL`, `OCTOREVIEW_STORAGE_S3_PUBLIC_ENDPOINT_URL` | unset | the public endpoint presigns host-reachable URLs (compose MinIO) |
+| `OCTOREVIEW_STORAGE_S3_ENDPOINT_URL`, `OCTOREVIEW_STORAGE_S3_PUBLIC_ENDPOINT_URL` | unset | the public endpoint presigns host-reachable URLs (the compose S3 emulator); it defaults to the endpoint |
+| `OCTOREVIEW_STORAGE_S3_ADDRESSING_STYLE` | `auto` | `auto` \| `path` \| `virtual`; `path` for a store reached by a bare host name |
 | `OCTOREVIEW_MEDIA_PUBLIC_BASE_URL` | unset | public-CDN mode |
 | `OCTOREVIEW_UPLOAD_URL_TTL_SECONDS` | 900 | |
 | `OCTOREVIEW_MEDIA_URL_TTL_SECONDS` | 900 | |
@@ -1074,10 +1092,12 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
 
   Placeholder jobs (`octoreview:placeholder`) become real in their feature PRs, and
   `make release-check` fails while any remain.
-- **Emulators.** The `storage-emulators` job runs fully when storage, media, CI, lockfiles,
-  settings, auth or storage fixtures change, or when path classification is uncertain; otherwise it
-  exits green after the path check. A nightly run executes it in full and opens an issue on
-  failure.
+- **Emulators.** The `storage-emulators` job runs `make test-storage`: the S3 tests and
+  `check_storage` against the digest-pinned RustFS image. In line 1 it runs in full on every pull
+  request (about a minute). When Azurite and fake-gcs-server join it in line 2, it runs fully when
+  storage, media, CI, lockfiles, settings, auth or storage fixtures change, or when path
+  classification is uncertain; otherwise it exits green after the path check, and a nightly run
+  executes it in full and opens an issue on failure.
 - **`compose-quickstart`.** Runs `docker compose up -d` and the curl quickstart on a clean runner.
   It asserts review + rating + media URL within 5 minutes (image pull time reported separately),
   records the getting-started time in the job summary, and passes again on a second run against the
@@ -1088,7 +1108,7 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
   `workflow_run.head_sha` after the same ancestry check that octonomy's `publish-image.yml` runs.
 - **SDK CI.** SDK PR CI pins a `sha-<commit>` server image named in `docs/versioning.md` and bumped
   by a bot PR. A scheduled SDK job runs against `edge` and opens an issue on failure. Each SDK's
-  upload integration test also runs against the compose `s3` profile (MinIO). The "previous SDK
+  upload integration test also runs against the compose `s3` profile (the S3 emulator). The "previous SDK
   against next server" job skips until a previous SDK release exists.
 - **Release candidates.** rc tags (`vX.Y.Z-rc.N`) publish immutable image tags without moving
   `latest` or stable aliases. `contract-drift.yml` and `resolve-latest-tag` treat the newest rc as
@@ -1113,7 +1133,8 @@ authentication; GraphQL; per-tenant storage backends (PLT-2); helpfulness votes 
 replies (PRD-2, which waits for Mbizmarket to ask); multi-criteria ratings (PRD-3); weighted scores
 (PRD-4); an MCP server (PLT-1); systemd units (DEP-1); a shared `octoverse-core` (PLT-3);
 write-once uploads (PLT-10); a quota delta counter (PLT-11); audit retention (PLT-12); a
-`reviews:read_unpublished` scope (PLT-13); rate limiting (DEP-3); a Python SDK (PLT-6). See
+`reviews:read_unpublished` scope (PLT-13); rate limiting (DEP-3); a Python SDK (PLT-6); the
+attempt-key fallback for stores without conditional copy (PLT-14). See
 [`TODOS.md`](../TODOS.md).
 
 ## 21. Contradiction table
@@ -1164,6 +1185,9 @@ write-once uploads (PLT-10); a quota delta counter (PLT-11); audit retention (PL
 | 42 | Inactive entity aggregates | "frozen" (CEO) | kept current by moderation; "frozen" means no new contributions (DX consistency fixes) |
 | 43 | Media URL lifetime cap | Azure only (Eng E6) | every backend: `min(TTL, backend cap, credential expiry - 60 s)` (Eng R14, N5) |
 | 44 | Dependabot ecosystems at bootstrap | uv, gomod, composer, npm (plan) | GitHub Actions only until each repository's first manifest lands (bootstrap, Dependabot errors on an ecosystem with no manifest) |
+| 45 | S3 emulator (CI and the compose `s3` profile) | MinIO (plan, Eng T1) | RustFS 1.0.6, pinned by digest: MinIO's images left Docker Hub and Quay in September 2026, and RustFS passed every spike check (week-1 spike, [`storage.md`](storage.md)) |
+| 46 | Stores without conditional copy | the attempt-key fallback (Eng N4) | not built in line 1; `check_storage` refuses such a store (week-1 spike; TODOS PLT-14) |
+| 47 | `storage-emulators` path filter and nightly run | from the first emulator (plan) | full run on every pull request in line 1; the filter arrives with the line-2 emulators |
 
 ## 22. Spec decisions
 

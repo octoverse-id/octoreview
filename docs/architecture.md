@@ -12,7 +12,7 @@ this with import-linter (`[tool.importlinter]` in `pyproject.toml`).
 | top | `octoreview.openapi` | `make openapi-check`: compares `docs/openapi.yaml`, `errors.md`, `events.md` and `sdk-surface.yaml` with the URLconf and the error and event registries |
 | | `octoreview.api` | Views, serializers and URL routes; composes the domain modules |
 | | `octoreview.lifecycle` | Transition tables, removal cascades, erasure (release line 1) |
-| | `octoreview.media` | Media rows, upload intents, completion, signed tokens; `media.storage` holds the adapters and nothing else imports it |
+| | `octoreview.media` | Media rows, upload intents, completion, signed tokens; `media.storage` holds the adapters (`local`, `s3`) and nothing else imports it; boto3 is imported only by `media.storage.s3` |
 | | `octoreview.reviews` | Reviews and revisions (release line 1) |
 | | `octoreview.entities` | Entities, application settings, rating aggregates (release line 1) |
 | | `octoreview.service_auth` | Service clients, grants, key hashing, the DRF permission class, token commands |

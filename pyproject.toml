@@ -35,7 +35,11 @@ package = false
 DJANGO_SETTINGS_MODULE = "config.settings_pytest"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-addopts = "-ra --cov=octoreview --cov-report=term-missing:skip-covered"
+markers = [
+  "s3: needs an S3-compatible endpoint (OCTOREVIEW_TEST_S3_ENDPOINT_URL; make test-storage)",
+  "s3_large: uploads 500 MiB to the S3 endpoint (OCTOREVIEW_TEST_S3_LARGE=1)",
+]
+addopts = "-ra --strict-markers --cov=octoreview --cov-report=term-missing:skip-covered"
 filterwarnings = [
   # LIMIT/OFFSET over a query with no ORDER BY is undefined in SQL; make it a test failure
   # (octonomy issue #162).
