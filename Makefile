@@ -95,6 +95,9 @@ llms-check: ## Fail when llms.txt links a missing local path (and prove the chec
 actionlint: ## Lint GitHub Actions workflows (needs actionlint on PATH)
 	@actionlint -color
 
+version-check: ## Fail unless pyproject, openapi.yaml, settings and a CHANGELOG heading name one version
+	@./scripts/version-check.sh
+
 placeholder-check: ## Fail while any bootstrap CI placeholder job remains
 	@if grep -rn 'octoreview:placeholder' .github/workflows; then \
 		echo "placeholder-check: bootstrap placeholder jobs remain; replace them before a release" >&2; exit 1; \
@@ -108,5 +111,5 @@ export-rulesets: ## Export the live rulesets into .github/rulesets/ (needs gh wi
 	@./scripts/export-rulesets.sh
 
 .PHONY: help install lint format checks test test-postgres test-storage docker-build docker-smoke \
-	up up-s3 down dev-env quickstart compose-quickstart seed security llms-check actionlint \
+	up up-s3 down dev-env quickstart compose-quickstart seed version-check security llms-check actionlint \
 	placeholder-check check release-check export-rulesets

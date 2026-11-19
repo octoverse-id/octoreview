@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Image publishing (`.github/workflows/publish-image.yml`, copied from octonomy): every green CI
+  run on `main` publishes `:edge` and `:sha-<commit>`; a `vX.Y.Z` or `vX.Y.Z-rc.N` tag on a
+  release merge publishes a multi-arch, smoke-tested, attested image, and candidates move no
+  tag but their own. `make version-check` keeps `pyproject.toml`, `docs/openapi.yaml`, the
+  settings version and the CHANGELOG heading in step. `docs/release.md` and
+  `docs/versioning.md` describe the publishing steps and the image tags.
 - The compose stack (`compose.yaml`): octoreview and PostgreSQL 17, migrating on start, media on
   the local backend by default, and an `s3` profile with the RustFS emulator plus an init step
   that sets up the bucket (staging lifecycle rule, CORS). `manage.py seed` (`make seed`) creates

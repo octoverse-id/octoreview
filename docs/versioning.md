@@ -8,6 +8,19 @@ The server ships `1.0.0-rc.N` tags until its first consumer integration (Mbizmar
 passes, then `1.0.0`. Release candidates publish immutable image tags without moving
 `latest` or stable aliases.
 
+## Image tags
+
+`ghcr.io/octoverse-id/octoreview` (`docs/release.md` describes how each is published):
+
+| Tag | Moves | Published by |
+| --- | --- | --- |
+| `X.Y.Z` | never | a `vX.Y.Z` tag |
+| `X.Y.Z-rc.N` | never | a `vX.Y.Z-rc.N` tag; candidates move no other tag |
+| `X.Y` | to the newest `X.Y.x` release | a `vX.Y.Z` tag that is the newest in its line |
+| `latest` | to the newest release | a `vX.Y.Z` tag that is the newest overall; candidates never move it |
+| `edge` | to main's tip | every green CI run on `main` (amd64, unattested, not for production) |
+| `sha-<commit>` | never | the same run as `edge`; SDK CI pins one of these |
+
 ## Rules
 
 - Breaking changes are not allowed on `/api/v1` after `1.0.0`; additive changes are minor.

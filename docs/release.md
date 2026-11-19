@@ -6,7 +6,10 @@ release workflow; until the first release it records the invariants every releas
 ## Invariants
 
 - A release PR is named `release/<version>` and only bumps the version and moves the
-  `[Unreleased]` CHANGELOG entries under the new version heading.
+  `[Unreleased]` CHANGELOG entries under the new version heading. The version lives in four
+  places that `make version-check` keeps in step: `pyproject.toml` (PEP 440, for example
+  `1.0.0rc1`), `docs/openapi.yaml` `info.version`, `SPECTACULAR_SETTINGS["VERSION"]` in
+  `config/settings.py`, and the CHANGELOG heading (semver, `1.0.0-rc.1`).
 - The tag `v<version>` is created on the merge commit of that PR after its CI is green.
 - Release tags never move: the `release tags: never move` ruleset rejects re-pointing or
   force-pushing a `v*` tag, admins included. Only repo admins can delete a wrong tag
@@ -17,5 +20,38 @@ release workflow; until the first release it records the invariants every releas
 
 1. Open an issue for the release and a `release/<version>` branch from `main`.
 2. Bump the version and update `CHANGELOG.md`; open the PR with `Closes #<issue-number>`.
-3. Merge when CI is green, then tag the merge commit `v<version>` and push the tag.
-4. Publishing steps for this repository are added here by the PR that adds the publish workflow.
+3. Merge when CI is green, then tag the merge commit `v<version>` (`v1.0.0-rc.1`, `v1.0.0`)
+   and push the tag.
+4. The tag starts `.github/workflows/publish-image.yml` (job `release`). Before building, it
+   refuses a commit that is not on main, has no green CI run on main, is not the release merge
+   (`scripts/check-release-merge.sh`), has disagreeing version stamps, or names a version
+   already published. It then builds amd64 and arm64 by digest, smoke-tests both (the full
+   `docker-smoke` on amd64), attests provenance and an SBOM per platform, verifies them, checks
+   an anonymous pull and promotes the tags (`docs/versioning.md`). A failed run is re-run, never
+   re-tagged: a version that is already published is re-promoted from its existing digest.
+
+## Rehearsing a release
+
+Run the workflow by hand from `main` (Actions, "Publish image", `dry_run` on). It runs the whole
+release pipeline (multi-arch build, both smoke tests, attestation, verification, the tag
+calculation) but promotes only `:dryrun`. It skips the two checks that only a tag can satisfy:
+the release merge and the version stamps.
+
+## Every merge to main
+
+When CI passes on a push to `main`, the `edge` job publishes `:edge` and `:sha-<commit>` (amd64,
+unattested, unsupported for production). It refuses a commit that is no longer main's tip, and
+it never runs for a pull request's CI, a fork's or another branch's.
+
+## The first publish
+
+GHCR creates a new package as **private**, even for a public repository. The first `edge` run
+creates `ghcr.io/octoverse-id/octoreview` and then fails its anonymous pull check. An org admin
+makes the package public (package settings, "Change visibility") and re-runs the job.
+
+## Who can publish
+
+Every check in the workflow guards mistakes, not someone with write access: GitHub loads a
+workflow from the ref that triggered it, so anyone who can push a tag can push one whose
+workflow drops a check. Write access to this repository is publish access; the tag rulesets
+(`release tags: never move`, deletion admin-only) are the controls outside the workflow.
