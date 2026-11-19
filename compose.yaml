@@ -1,0 +1,105 @@
+# The local stack (README "Quickstart"; docs/spec.md section 14). Development only: DEBUG is on,
+# so the secrets fall back to fixed development values.
+#
+#   make up        octoreview + PostgreSQL, media on the local backend
+#   make up-s3     the same, with media on the RustFS S3 emulator (profile `s3`)
+#   make dev-env   copy .octoreview-dev.env (base URL, demo key, tenant, application) out
+#   make down      stop; `docker compose down -v` also drops the data
+#
+# Host ports default to 8000 (API) and 9000 (S3 emulator); set OCTOREVIEW_PORT and
+# OCTOREVIEW_S3_PORT when those are taken.
+#
+# octoreview migrates and seeds on start (scripts/compose-start.sh). Production images run
+# migrations as a deploy step instead (docs/deployment.md).
+
+name: octoreview
+
+x-s3: &s3
+  OCTOREVIEW_STORAGE_S3_BUCKET: octoreview-media
+  OCTOREVIEW_STORAGE_S3_REGION: us-east-1
+  OCTOREVIEW_STORAGE_S3_ENDPOINT_URL: http://rustfs:9000
+  AWS_ACCESS_KEY_ID: octoreview-dev
+  AWS_SECRET_ACCESS_KEY: octoreview-dev-secret
+  OCTOREVIEW_MEDIA_CORS_ORIGINS: http://localhost:3000
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: octoreview
+      POSTGRES_USER: octoreview
+      POSTGRES_PASSWORD: octoreview
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U octoreview -d octoreview"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  octoreview:
+    build: .
+    image: ${OCTOREVIEW_IMAGE:-octoreview:local}
+    command: ["sh", "/app/scripts/compose-start.sh"]
+    environment:
+      <<: *s3
+      DJANGO_DEBUG: "true"
+      DATABASE_URL: postgres://octoreview:octoreview@db:5432/octoreview
+      OCTOREVIEW_STORAGE_BACKEND: ${OCTOREVIEW_STORAGE_BACKEND:-local}
+      OCTOREVIEW_STORAGE_LOCATION_ID: compose-${OCTOREVIEW_STORAGE_BACKEND:-local}
+      OCTOREVIEW_PUBLIC_BASE_URL: http://localhost:${OCTOREVIEW_PORT:-8000}
+      OCTOREVIEW_MEDIA_ROOT: /var/lib/octoreview/media
+      # Presigned URLs are signed for the host your browser and SDKs reach; the server itself
+      # talks to the emulator by its service name (docs/storage.md).
+      OCTOREVIEW_STORAGE_S3_PUBLIC_ENDPOINT_URL: http://localhost:${OCTOREVIEW_S3_PORT:-9000}
+      OCTOREVIEW_STORAGE_S3_ADDRESSING_STYLE: path
+      OCTOREVIEW_DEMO_SEED: "1"
+    ports:
+      - "${OCTOREVIEW_PORT:-8000}:8000"
+    volumes:
+      - media:/var/lib/octoreview/media
+      - devenv:/var/lib/octoreview/dev
+    depends_on:
+      db:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+        required: false # only in the `s3` profile
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready')"
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  rustfs:
+    profiles: [s3]
+    # The CI emulator, pinned by digest (Makefile S3_IMAGE; docs/storage.md "Emulator").
+    image: rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+    environment:
+      RUSTFS_ACCESS_KEY: octoreview-dev
+      RUSTFS_SECRET_KEY: octoreview-dev-secret
+    ports:
+      - "${OCTOREVIEW_S3_PORT:-9000}:9000"
+    volumes:
+      - s3data:/data
+
+  s3-init:
+    profiles: [s3]
+    image: ${OCTOREVIEW_IMAGE:-octoreview:local}
+    # Bypasses the server entrypoint: this one-shot only talks to the emulator.
+    entrypoint: ["python", "/app/scripts/compose-s3-init.py"]
+    environment:
+      <<: *s3
+    depends_on:
+      rustfs:
+        condition: service_started
+
+volumes:
+  pgdata:
+  media:
+  devenv:
+  s3data:

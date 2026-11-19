@@ -54,6 +54,28 @@ docker-build: ## Build the server image (needs Docker)
 docker-smoke: ## Smoke-test the image named by IMAGE (default octoreview:local; needs Docker)
 	@./scripts/docker-smoke.sh $(IMAGE)
 
+up: ## Start octoreview + PostgreSQL with media on the local backend (compose; needs Docker)
+	docker compose up -d --build --wait
+
+up-s3: ## Start the stack with media on the RustFS S3 emulator (compose profile s3; needs Docker)
+	OCTOREVIEW_STORAGE_BACKEND=s3 docker compose --profile s3 up -d --build --wait
+
+down: ## Stop the compose stack (data stays; docker compose down -v drops it)
+	docker compose --profile s3 down
+
+dev-env: ## Copy .octoreview-dev.env (base URL, demo key, tenant, application) out of the stack
+	@docker compose cp octoreview:/var/lib/octoreview/dev/.octoreview-dev.env .octoreview-dev.env
+	@echo "wrote .octoreview-dev.env (git-ignored; holds the demo key)"
+
+quickstart: ## Create a review with a photo against the stack (needs make up and make dev-env)
+	@./scripts/quickstart.sh .octoreview-dev.env
+
+compose-quickstart: ## The CI compose check: clean, second and s3 runs of the quickstart (drops the stack's volumes)
+	@./scripts/compose-quickstart.sh
+
+seed: ## Print a new demo key once with a curl, against your environment (needs DJANGO_DEBUG=true)
+	uv run python manage.py seed
+
 openapi-check: ## Check docs/openapi.yaml, errors.md, events.md and sdk-surface.yaml against the server
 	$(PYTEST_SETTINGS) uv run python manage.py check_contract
 
@@ -85,5 +107,6 @@ release-check: check test-postgres test-storage docker-build docker-smoke placeh
 export-rulesets: ## Export the live rulesets into .github/rulesets/ (needs gh with repo admin)
 	@./scripts/export-rulesets.sh
 
-.PHONY: help install lint format checks test test-postgres test-storage docker-build docker-smoke security llms-check actionlint \
+.PHONY: help install lint format checks test test-postgres test-storage docker-build docker-smoke \
+	up up-s3 down dev-env quickstart compose-quickstart seed security llms-check actionlint \
 	placeholder-check check release-check export-rulesets

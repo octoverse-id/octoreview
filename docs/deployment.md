@@ -7,7 +7,8 @@ bucket or media directory.
 ## The image
 
 Build it with `make docker-build` (tag `octoreview:local`). Published images arrive with the
-publish workflow (epic #3).
+publish workflow (epic #3). For development, `compose.yaml` runs the image with PostgreSQL
+(README "Quickstart"); it turns DEBUG on and is not a deployment template.
 
 - Python 3.12 slim, pinned by digest; the locked runtime dependencies plus every storage extra;
   no dev tools.

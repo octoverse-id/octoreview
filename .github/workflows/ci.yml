@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 # Every job name below is a final required check in the `main: require PR + green CI` ruleset
-# (.github/rulesets/main-require-pr-green-ci.json). Jobs marked octoreview:placeholder are
-# bootstrap stand-ins that pass so the ruleset could be set once; each is replaced by the real
-# job in its feature PR. `make release-check` fails while any placeholder remains.
+# (.github/rulesets/main-require-pr-green-ci.json). The bootstrap placeholder jobs that let the
+# ruleset be set once have all been replaced; `make placeholder-check` (part of
+# `make release-check`) fails if a job carrying the placeholder marker comes back.
 
 jobs:
   lint:
@@ -131,12 +131,16 @@ jobs:
         run: make test-storage
 
   compose-quickstart:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
+    permissions:
+      contents: read
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'compose-quickstart' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compose quickstart (clean, second run, s3 profile)
+        # docker compose up through the curl quickstart within 5 minutes per run; the image
+        # build is timed separately. Each run's time goes to the job summary.
+        run: make compose-quickstart
 
   docker:
     runs-on: ubuntu-latest

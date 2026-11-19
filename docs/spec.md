@@ -941,8 +941,9 @@ Errors on the local token paths carry CORS headers.
 | `check_storage` | 11 |
 | `seed` (`make seed`) | demo tenant, application and service key; prints the key once and a working `curl` for `POST /api/v1/reviews` |
 
-The compose stack seeds idempotently when `OCTOREVIEW_DEMO_SEED=1` and DEBUG is on, and the
-backend is `local` or the compose S3 emulator:
+The compose stack (`compose.yaml`; `make up`, or `make up-s3` for the `s3` profile with the RustFS
+emulator) migrates on start and seeds idempotently when `OCTOREVIEW_DEMO_SEED=1` and DEBUG is on,
+and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
 - It writes `.octoreview-dev.env` (`OCTOREVIEW_BASE_URL`, `OCTOREVIEW_API_KEY`,
   `OCTOREVIEW_TENANT_ID`, `OCTOREVIEW_APPLICATION_ID`) into a named volume, and `make dev-env`
   copies it out as the invoking user.
@@ -1102,10 +1103,11 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
   registry credential) and runs `make docker-smoke`: non-root, the s3 extra present, no dev tools,
   `manage.py check`, fail-closed startup, live and ready health after `migrate`, `gthread` workers
   and an all-JSON log stream. [`deployment.md`](deployment.md) documents the image.
-- **`compose-quickstart`.** Runs `docker compose up -d` and the curl quickstart on a clean runner.
-  It asserts review + rating + media URL within 5 minutes (image pull time reported separately),
-  records the getting-started time in the job summary, and passes again on a second run against the
-  same volume.
+- **`compose-quickstart`.** Runs `make compose-quickstart` on a clean runner: `docker compose up`
+  and the curl quickstart (`scripts/quickstart.sh`: review, photo upload, rating, photo URL) within
+  5 minutes, three times (a clean local stack, a second run against the same volumes, a clean
+  `s3` profile). The image build time is reported separately, and each run's time goes to the job
+  summary.
 - **`edge` image.** Server `main` publishes `edge` and `sha-<commit>` images on `workflow_run` of CI,
   only when `workflow_run.event == 'push'`, `head_branch == 'main'`,
   `head_repository.full_name == github.repository` and `conclusion == 'success'`. It builds

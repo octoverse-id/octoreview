@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The compose stack (`compose.yaml`): octoreview and PostgreSQL 17, migrating on start, media on
+  the local backend by default, and an `s3` profile with the RustFS emulator plus an init step
+  that sets up the bucket (staging lifecycle rule, CORS). `manage.py seed` (`make seed`) creates
+  the demo tenant, application and all-scope key, only with DEBUG on; with `--dev-env` it writes
+  `.octoreview-dev.env` (mode 600), is idempotent and rotates the key when the file is lost.
+  `make up`, `make up-s3`, `make down`, `make dev-env`, `make quickstart` and
+  `make compose-quickstart`; `scripts/quickstart.sh` is the curl quickstart. The
+  `compose-quickstart` CI job runs it on a clean stack, a second run and the `s3` profile.
 - The server container image: `Dockerfile` (Python 3.12 slim pinned by digest, locked runtime
   dependencies with the `s3` extra, no dev tools, non-root uid 1001, `DJANGO_DEBUG=false`),
   `docker-entrypoint.sh` (fail-closed `manage.py check`) and `gunicorn.conf.py` (`gthread` with 8

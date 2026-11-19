@@ -9,11 +9,27 @@ Official SDKs: [Go](https://github.com/octoverse-id/octoreview-go),
 [PHP](https://github.com/octoverse-id/octoreview-php) and
 [JavaScript](https://github.com/octoverse-id/octoreview-js).
 
+## Quickstart
+
+With Docker:
+
+```sh
+make up          # octoreview + PostgreSQL on http://localhost:8000, media on the local backend
+make dev-env     # writes .octoreview-dev.env: base URL, a demo key, tenant and application
+make quickstart  # creates a review with a photo and prints its id, the rating and the photo URL
+```
+
+`make up-s3` runs the same stack with media on an S3 emulator (RustFS on port 9000), the way a
+cloud deployment stores them. `make down` stops the stack; `docker compose down -v` also drops its
+data. When ports 8000 or 9000 are taken, set `OCTOREVIEW_PORT` or `OCTOREVIEW_S3_PORT`.
+
+The stack is for development: DEBUG is on and the demo key has every scope. To run the image for
+real, read [`docs/deployment.md`](docs/deployment.md) and [`docs/storage.md`](docs/storage.md).
+
 ## Status
 
-Bootstrapped: governance files, rulesets and a CI skeleton whose placeholder jobs become real
-jobs as the code lands. No release yet. Release line 1 ships the server (local and S3 storage)
-with the Go, PHP and JavaScript SDKs; see [`docs/versioning.md`](docs/versioning.md).
+In development; no release yet. Release line 1 ships the server (local and S3 storage) with the
+Go, PHP and JavaScript SDKs; see [`docs/versioning.md`](docs/versioning.md).
 
 ## Working on this repository
 
