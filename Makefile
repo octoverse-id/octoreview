@@ -11,6 +11,8 @@ PYTEST_SETTINGS := DJANGO_SETTINGS_MODULE=config.settings_pytest
 # The S3-compatible emulator for `make test-storage` (docs/storage.md, "Emulator").
 S3_CONTAINER ?= octoreview-test-s3
 S3_PORT ?= 59000
+# The server image `make docker-build` builds and `make docker-smoke` tests.
+IMAGE ?= octoreview:local
 S3_IMAGE ?= rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
 
 help: ## List available targets
@@ -45,6 +47,13 @@ test-storage: ## Run the S3 tests and check_storage against an S3-compatible emu
 	@command -v docker >/dev/null || { echo "test-storage needs Docker; install it" >&2; exit 1; }
 	@./scripts/test-storage.sh $(S3_CONTAINER) $(S3_PORT) $(S3_IMAGE)
 
+docker-build: ## Build the server image (needs Docker)
+	@command -v docker >/dev/null || { echo "docker-build needs Docker; install it" >&2; exit 1; }
+	docker build -t $(IMAGE) .
+
+docker-smoke: ## Smoke-test the image named by IMAGE (default octoreview:local; needs Docker)
+	@./scripts/docker-smoke.sh $(IMAGE)
+
 openapi-check: ## Check docs/openapi.yaml, errors.md, events.md and sdk-surface.yaml against the server
 	$(PYTEST_SETTINGS) uv run python manage.py check_contract
 
@@ -71,10 +80,10 @@ placeholder-check: ## Fail while any bootstrap CI placeholder job remains
 
 check: lint checks llms-check test ## Fast gate (toolchain only)
 
-release-check: check test-postgres test-storage placeholder-check ## Full pre-release gate (fails while placeholders remain)
+release-check: check test-postgres test-storage docker-build docker-smoke placeholder-check ## Full pre-release gate (fails while placeholders remain)
 
 export-rulesets: ## Export the live rulesets into .github/rulesets/ (needs gh with repo admin)
 	@./scripts/export-rulesets.sh
 
-.PHONY: help install lint format checks test test-postgres test-storage security llms-check actionlint \
+.PHONY: help install lint format checks test test-postgres test-storage docker-build docker-smoke security llms-check actionlint \
 	placeholder-check check release-check export-rulesets
