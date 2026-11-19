@@ -3,7 +3,8 @@
 Development only: it refuses unless DEBUG is on, and refuses a real AWS bucket. The key carries
 every scope. Without `--dev-env` it prints the key once with a working `curl`. With
 `--dev-env PATH` (the compose stack) it writes `.octoreview-dev.env` instead and prints only the
-path; a rerun is a no-op while that file exists, and when the file is gone but the database
+path. A rerun keeps the key while the file holds a live demo key, refreshing the base URL if it
+changed (a new OCTOREVIEW_PORT); when the file is gone or its key is dead but the database
 persists, the old demo key is revoked and a new one written.
 """
 
@@ -18,7 +19,11 @@ from django.core.management.base import BaseCommand, CommandError
 
 from octoreview.core.auth import SCOPES
 from octoreview.service_auth.models import ServiceClient
-from octoreview.service_auth.services import create_service_client_token, revoke_service_client
+from octoreview.service_auth.services import (
+    create_service_client_token,
+    hash_service_token,
+    revoke_service_client,
+)
 
 DEMO_TENANT = "demo"
 DEMO_APPLICATION = "storefront"
@@ -49,9 +54,15 @@ class Command(BaseCommand):
             raise CommandError(
                 "seed refuses a real AWS bucket; use the local backend or the compose S3 emulator."
             )
+        base_url = settings.PUBLIC_BASE_URL or "http://localhost:8000"
         dev_env = Path(options["dev_env"]) if options["dev_env"] else None
-        if dev_env is not None and dev_env.exists() and demo_clients().exists():
-            self.stdout.write(f"seed: already seeded; the demo key is in {dev_env}")
+        saved = self._read_dev_env(dev_env)
+        if self._is_live_demo_key(saved.get("OCTOREVIEW_API_KEY")):
+            if saved.get("OCTOREVIEW_BASE_URL") != base_url:
+                self._write_dev_env(dev_env, base_url, saved["OCTOREVIEW_API_KEY"])
+                self.stdout.write(f"seed: kept the demo key; base URL is now {base_url}")
+            else:
+                self.stdout.write(f"seed: already seeded; the demo key is in {dev_env}")
             return
 
         # A lost dev env file means a lost key: rotate instead of minting a second live one.
@@ -69,7 +80,6 @@ class Command(BaseCommand):
             ],
             metadata={"demo_seed": True},
         )
-        base_url = settings.PUBLIC_BASE_URL or "http://localhost:8000"
         if dev_env is not None:
             self._write_dev_env(dev_env, base_url, token)
             self.stdout.write(f"seed: wrote {dev_env}; copy it out with `make dev-env`")
@@ -80,6 +90,19 @@ class Command(BaseCommand):
         self.stdout.write(f"  {token}")
         self.stdout.write("Create a review:")
         self.stdout.write(self._curl(base_url, token))
+
+    @staticmethod
+    def _read_dev_env(path: Path | None) -> dict[str, str]:
+        if path is None or not path.exists():
+            return {}
+        pairs = (line.split("=", 1) for line in path.read_text().splitlines() if "=" in line)
+        return {key: value for key, value in pairs}
+
+    @staticmethod
+    def _is_live_demo_key(token: str | None) -> bool:
+        if not token:
+            return False
+        return demo_clients().filter(hashed_key=hash_service_token(token)).exists()
 
     @staticmethod
     def _write_dev_env(path: Path, base_url: str, token: str) -> None:

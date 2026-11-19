@@ -99,3 +99,27 @@ def test_a_lost_dev_env_file_rotates_the_key(debug, tmp_path):
     assert authenticate_service_token(old) is None
     assert authenticate_service_token(new) is not None
     assert ServiceClient.objects.filter(is_active=True).count() == 1
+
+
+def test_a_new_port_refreshes_the_base_url_and_keeps_the_key(debug, tmp_path):
+    path = tmp_path / ".octoreview-dev.env"
+    debug.PUBLIC_BASE_URL = "http://localhost:8000"
+    seed("--dev-env", str(path))
+    before = read_env(path)
+    debug.PUBLIC_BASE_URL = "http://localhost:18000"  # restarted with OCTOREVIEW_PORT=18000
+    assert "base URL is now http://localhost:18000" in seed("--dev-env", str(path))
+    after = read_env(path)
+    assert after["OCTOREVIEW_BASE_URL"] == "http://localhost:18000"
+    assert after["OCTOREVIEW_API_KEY"] == before["OCTOREVIEW_API_KEY"]
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_a_dead_key_in_the_file_is_rotated(debug, tmp_path):
+    path = tmp_path / ".octoreview-dev.env"
+    seed("--dev-env", str(path))
+    old = read_env(path)["OCTOREVIEW_API_KEY"]
+    ServiceClient.objects.update(is_active=False)  # revoked by hand, for example
+    seed("--dev-env", str(path))
+    new = read_env(path)["OCTOREVIEW_API_KEY"]
+    assert new != old
+    assert authenticate_service_token(new) is not None
