@@ -161,8 +161,9 @@ The role that runs octoreview signs every URL, so it needs the permissions the U
   - hidden or rejected media stay reachable by URL until they are deleted, and a CDN keeps them
     until purge or TTL; purge after an erasure, or keep the CDN TTL short;
   - keys contain the tenant and application ids.
-- iPhone HEVC videos (`video/quicktime`) may not play in Chrome or Firefox; ask for H.264 MP4 when
-  playback in every browser matters.
+- Recommend MP4 with H.264 video and AAC audio to uploaders. HEVC, the iPhone default (often
+  `video/quicktime`), may not play in Chrome or Firefox; octoreview does not sniff codecs (TODOS
+  PRD-8).
 
 ### Compatible stores
 
