@@ -139,9 +139,29 @@ jobs:
         run: echo "octoreview:placeholder - 'compose-quickstart' becomes a real job in its feature PR"
 
   docker:
-    # octoreview:placeholder
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
+    # This job never holds a registry credential: ci.yml runs on pull_request, so a fork PR can
+    # trigger it. Build and smoke only; publishing lives in its own workflow (copied from
+    # octonomy's reasoning).
+    permissions:
+      contents: read
     steps:
-      - name: Bootstrap placeholder
-        run: echo "octoreview:placeholder - 'docker' becomes a real job in its feature PR"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The same pins as octonomy. The `type=gha` cache written here is restored by the publish
+      # path, so these must not float (a hijacked mutable tag could poison shared layers).
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: octoreview:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the image
+        # Non-root, s3 extra present, no dev tools, manage.py check, fail-closed startup,
+        # live and ready health after migrate, gthread workers and an all-JSON log stream.
+        run: make docker-smoke IMAGE=octoreview:ci

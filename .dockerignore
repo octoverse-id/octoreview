@@ -1,0 +1,23 @@
+# Only the source the image needs; nothing local or secret (Dockerfile `COPY . .`).
+.git
+.github
+.venv
+.env
+.env.*
+.octoreview-dev.env
+db.sqlite3
+var/
+code-review/
+.omc/
+.gstack/
+**/__pycache__
+*.py[cod]
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+tests/
+Dockerfile
+.dockerignore

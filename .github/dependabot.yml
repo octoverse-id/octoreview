@@ -15,6 +15,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    # The Dockerfile pins the base by digest on a literal FROM so this ecosystem can see it.
   - package-ecosystem: "github-actions"
     directories:
       - "/"

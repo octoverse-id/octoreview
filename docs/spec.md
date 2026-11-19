@@ -979,7 +979,7 @@ backend is `local` or the compose S3 emulator:
 | `OCTOREVIEW_WEBHOOK_URL`, `OCTOREVIEW_WEBHOOK_SECRET` | required for `webhook` | |
 | `OCTOREVIEW_ADMIN_ENABLED` | false in the image, true in compose | |
 | `OCTOREVIEW_DEMO_SEED` | 1 in compose | |
-| `GUNICORN_WORKER_CLASS`, `GUNICORN_THREADS` | `gthread`, 8 | |
+| `GUNICORN_WORKER_CLASS`, `GUNICORN_THREADS` | `gthread`, 8 | the other `GUNICORN_*` and `WEB_CONCURRENCY` knobs are in [`deployment.md`](deployment.md) |
 
 ## 16. Observability and operations
 
@@ -1098,6 +1098,10 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
   storage, media, CI, lockfiles, settings, auth or storage fixtures change, or when path
   classification is uncertain; otherwise it exits green after the path check, and a nightly run
   executes it in full and opens an issue on failure.
+- **`docker`.** Builds the image with Buildx (GitHub Actions cache, SHA-pinned actions, no
+  registry credential) and runs `make docker-smoke`: non-root, the s3 extra present, no dev tools,
+  `manage.py check`, fail-closed startup, live and ready health after `migrate`, `gthread` workers
+  and an all-JSON log stream. [`deployment.md`](deployment.md) documents the image.
 - **`compose-quickstart`.** Runs `docker compose up -d` and the curl quickstart on a clean runner.
   It asserts review + rating + media URL within 5 minutes (image pull time reported separately),
   records the getting-started time in the job summary, and passes again on a second run against the

@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The server container image: `Dockerfile` (Python 3.12 slim pinned by digest, locked runtime
+  dependencies with the `s3` extra, no dev tools, non-root uid 1001, `DJANGO_DEBUG=false`),
+  `docker-entrypoint.sh` (fail-closed `manage.py check`) and `gunicorn.conf.py` (`gthread` with 8
+  threads, JSON logs, access log off). `make docker-build` and `make docker-smoke`; the `docker`
+  CI job builds with Buildx and runs the smoke test. `docs/deployment.md` covers running the
+  image, migrations, gunicorn settings and reverse-proxy timeouts and body limits. Dependabot
+  watches the base image.
 - The `s3` storage backend for AWS S3 and S3-compatible stores (`OCTOREVIEW_STORAGE_BACKEND=s3`,
   extra `octoreview[s3]`). Presigned PUTs sign `Content-Type` and `Content-Length`; `complete`
   copies the validated version with `CopySourceIfMatch` and server-chosen metadata; reads are
