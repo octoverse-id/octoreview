@@ -20,6 +20,7 @@ from django.utils import timezone
 
 from octoreview.media.storage import (
     CredentialsExpiring,
+    FinalExists,
     ObjectInfo,
     PreconditionFailed,
     StorageBackend,
@@ -47,8 +48,9 @@ def credential_expiry(credentials) -> datetime | None:
         raise StorageError("credentials", "No AWS credentials were found in the default chain.")
     try:
         credentials.get_frozen_credentials()
-    except BotoCoreError as exc:
-        raise StorageError("credentials", str(exc)) from exc
+    except (BotoCoreError, ClientError) as exc:
+        # A mandatory STS refresh can fail with either (an IRSA or assumed-role outage).
+        raise _error("credentials", exc) from exc
     expiry = getattr(credentials, "_expiry_time", None)
     if expiry is None:
         return None
@@ -115,10 +117,14 @@ class S3Backend(StorageBackend):
         }
         self.client = self.session.client("s3", config=Config(**base, read_timeout=60), **common)
         # A store that does not stream progress during a long CopyObject sends nothing until the
-        # copy ends, so the copy client may wait for the whole completion lease (spec 7.4).
-        self.copy_client = self.session.client(
-            "s3", config=Config(**base, read_timeout=settings.COMPLETE_LEASE_SECONDS), **common
+        # copy ends, so the copy client may wait for the whole completion lease (spec 7.4). It
+        # never retries on its own: a retried copy could start after the lease ended. The client
+        # repeats `complete` instead, which takes a fresh lease.
+        copy_config = Config(
+            **{**base, "retries": {"mode": "standard", "max_attempts": 1}},
+            read_timeout=settings.COMPLETE_LEASE_SECONDS,
         )
+        self.copy_client = self.session.client("s3", config=copy_config, **common)
         # Presigning is local computation, but the URL embeds the host it was signed for.
         self.presign_client = self.session.client(
             "s3",
@@ -130,7 +136,11 @@ class S3Backend(StorageBackend):
     def url_expiry(self, requested: datetime) -> datetime:
         now = timezone.now()
         limit = min(requested, now + PRESIGN_CAP)
-        expiry = credential_expiry(self.session.get_credentials())
+        try:
+            credentials = self.session.get_credentials()
+        except (BotoCoreError, ClientError) as exc:
+            raise _error("credentials", exc) from exc
+        expiry = credential_expiry(credentials)
         if expiry is None:
             return limit
         usable = expiry - CREDENTIAL_MARGIN
@@ -205,12 +215,18 @@ class S3Backend(StorageBackend):
                 Key=final_key,
                 CopySource={"Bucket": self.bucket, "Key": staging_key},
                 CopySourceIfMatch=if_version,
+                # Never overwrite: a copy that outlives its completion lease must not replace the
+                # bytes another attempt already published (spec 7.4).
+                IfNoneMatch="*",
                 # Served metadata is chosen by the server, never inherited from the upload.
                 MetadataDirective="REPLACE",
                 ContentType=content_type,
             )
         except ClientError as exc:
             if _precondition(exc) or _missing(exc):
+                # Both preconditions answer 412; the final key tells them apart.
+                if self.stat(final_key) is not None:
+                    raise FinalExists() from exc
                 raise PreconditionFailed() from exc
             raise _error("finalize", exc) from exc
         except BotoCoreError as exc:

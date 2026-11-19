@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from octoreview.media import tokens
 from octoreview.media.management.commands.check_storage import http
-from octoreview.media.storage import PreconditionFailed
+from octoreview.media.storage import FinalExists, PreconditionFailed
 from octoreview.media.storage.local import LocalBackend
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(56))
@@ -121,6 +121,19 @@ def test_a_re_put_after_validation_is_never_published(store, keys):
             keys.staging, keys.final, content_type="image/png", if_version=version
         )
     assert store.backend.stat(keys.final) is None
+
+
+def test_a_published_object_is_never_overwritten(store, keys):
+    store.upload(keys.staging, PNG)
+    first = store.backend.stat(keys.staging).version
+    store.backend.finalize(keys.staging, keys.final, content_type="image/png", if_version=first)
+    store.upload(keys.staging, OTHER_PNG)
+    second = store.backend.stat(keys.staging).version
+    with pytest.raises(FinalExists):
+        store.backend.finalize(
+            keys.staging, keys.final, content_type="image/png", if_version=second
+        )
+    assert store.download(keys.final) == PNG
 
 
 def test_finalize_without_a_staged_object_is_a_precondition_failure(store, keys):

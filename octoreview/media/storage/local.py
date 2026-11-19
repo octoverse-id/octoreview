@@ -3,8 +3,9 @@
 Development and single-node only. Uploads land through `PUT /api/v1/media-uploads/{token}`,
 which writes a part file and `os.replace`s it onto the staging key, so a reader never sees a
 half-written file. `finalize` renames the staging file to a private attempt path first, then
-checks it is still the validated version, then renames it onto the final key: a re-PUT during
-completion lands on a new inode and fails the version check instead of slipping through.
+checks it is still the validated version, then hard-links it onto the final key: a re-PUT during
+completion lands on a new inode and fails the version check instead of slipping through, and the
+link refuses an existing final file, so a published file is never replaced.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from django.conf import settings
 from octoreview.media import tokens
 from octoreview.media.storage import (
     STAGING_PREFIX,
+    FinalExists,
     ObjectInfo,
     PreconditionFailed,
     StorageBackend,
@@ -96,12 +98,16 @@ class LocalBackend(StorageBackend):
             raise StorageError("finalize", str(exc)) from exc
         try:
             if self._version(attempt.stat()) != if_version:
-                attempt.unlink(missing_ok=True)
                 raise PreconditionFailed()
-            os.replace(attempt, target)
+            # link(2) fails on an existing name, atomically: the no-overwrite rule of S3's
+            # If-None-Match, on a filesystem.
+            os.link(attempt, target)
+        except FileExistsError as exc:
+            raise FinalExists() from exc
         except OSError as exc:
-            attempt.unlink(missing_ok=True)
             raise StorageError("finalize", str(exc)) from exc
+        finally:
+            attempt.unlink(missing_ok=True)
 
     def delete(self, key: str) -> None:
         self.guard()

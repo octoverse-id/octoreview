@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from botocore.credentials import RefreshableCredentials
-from botocore.exceptions import EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.stub import Stubber
 from django.core.management import CommandError, call_command
 from django.utils import timezone
@@ -27,14 +27,16 @@ from django.utils import timezone
 from octoreview.lifecycle.media import cleanup_media
 from octoreview.media import tokens
 from octoreview.media.management.commands.check_storage import http as send
-from octoreview.media.models import MediaStatus, ReviewMedia
+from octoreview.media.models import MediaStatus, ReviewMedia, StorageLocation
 from octoreview.media.storage import (
     CredentialsExpiring,
+    FinalExists,
     PreconditionFailed,
     StorageError,
     get_backend,
 )
 from octoreview.media.storage.s3 import ExpirationRule, credential_expiry
+from octoreview.reviews.models import Review
 from tests.conftest import s3_keys
 from tests.test_media import APP, JPEG, PNG, SCOPES, complete, create_review, intent, set_settings
 
@@ -155,6 +157,58 @@ def test_missing_credentials_are_a_storage_error():
     assert error.value.operation == "credentials"
 
 
+def test_a_failed_sts_refresh_is_a_storage_error(offline_s3, monkeypatch):
+    """A mandatory refresh that STS refuses raises ClientError, which must not become a 500."""
+
+    def sts_down():
+        raise ClientError(
+            {"Error": {"Code": "ServiceUnavailable"}, "ResponseMetadata": {"HTTPStatusCode": 503}},
+            "AssumeRoleWithWebIdentity",
+        )
+
+    credentials = expiring_credentials(timedelta(seconds=90))  # inside the mandatory window
+    credentials._refresh_using = sts_down
+    monkeypatch.setattr(offline_s3.session, "get_credentials", lambda: credentials)
+    with pytest.raises(StorageError) as error:
+        offline_s3.url_expiry(timezone.now() + timedelta(minutes=15))
+    assert error.value.operation == "credentials"
+
+
+@pytest.mark.django_db
+def test_a_failed_sts_refresh_leaves_lists_working(
+    offline_s3, monkeypatch, api_client, headers, admin
+):
+    review = create_review(api_client, headers, admin)
+    review_row = Review.objects.get(pk=review["id"])
+    ReviewMedia.objects.create(
+        tenant_id="tenant-a",
+        application_id="app-1",
+        review=review_row,
+        kind="image",
+        status=MediaStatus.READY,
+        content_type="image/png",
+        size_bytes=64,
+        staging_key="_staging/tenant-a/app-1/x",
+        storage_key="media/tenant-a/app-1/e/r/x.png",
+        storage_location=StorageLocation.objects.get_or_create(
+            id="pytest-local", defaults={"backend": "s3"}
+        )[0],
+        upload_expires_at=timezone.now(),
+    )
+
+    def sts_down():
+        raise ClientError({"Error": {"Code": "Throttling"}}, "AssumeRoleWithWebIdentity")
+
+    credentials = expiring_credentials(timedelta(seconds=90))
+    credentials._refresh_using = sts_down
+    monkeypatch.setattr(offline_s3.session, "get_credentials", lambda: credentials)
+    response = api_client.get(f"/api/v1/reviews/{review['id']}?{APP}", **headers(admin))
+    assert response.status_code == 200
+    media = response.json()["data"]["media"][0]
+    assert media["url"] is None
+    assert media["url_unavailable"] == "signing"
+
+
 @pytest.mark.django_db
 def test_an_intent_on_a_spent_credential_answers_503(
     offline_s3, monkeypatch, api_client, headers, admin
@@ -212,9 +266,21 @@ def test_a_changed_or_vanished_object_is_a_precondition_failure(offline_s3, stat
         stub.add_client_error("get_object", service_error_code=code, http_status_code=status)
         with pytest.raises(PreconditionFailed):
             offline_s3.read_head("k", 8, if_version='"v"')
-    with Stubber(offline_s3.copy_client) as stub:
-        stub.add_client_error("copy_object", service_error_code=code, http_status_code=status)
+    with Stubber(offline_s3.copy_client) as copy, Stubber(offline_s3.client) as head:
+        copy.add_client_error("copy_object", service_error_code=code, http_status_code=status)
+        head.add_client_error("head_object", service_error_code="404", http_status_code=404)
         with pytest.raises(PreconditionFailed):
+            offline_s3.finalize("s", "f", content_type="image/png", if_version='"v"')
+
+
+def test_a_taken_final_key_is_never_overwritten(offline_s3):
+    # Both preconditions answer 412; an existing final object means the destination one failed.
+    with Stubber(offline_s3.copy_client) as copy, Stubber(offline_s3.client) as head:
+        copy.add_client_error(
+            "copy_object", service_error_code="PreconditionFailed", http_status_code=412
+        )
+        head.add_response("head_object", {"ContentLength": 64, "ETag": '"published"'})
+        with pytest.raises(FinalExists):
             offline_s3.finalize("s", "f", content_type="image/png", if_version='"v"')
 
 
@@ -228,6 +294,7 @@ def test_copy_sends_the_precondition_and_replaces_metadata(offline_s3):
                 "Key": "media/f.png",
                 "CopySource": {"Bucket": "reviews", "Key": "_staging/s"},
                 "CopySourceIfMatch": '"v1"',
+                "IfNoneMatch": "*",
                 "MetadataDirective": "REPLACE",
                 "ContentType": "image/png",
             },
@@ -473,6 +540,43 @@ def test_a_re_put_during_complete_is_never_served(
 
 
 @pytest.mark.s3
+@pytest.mark.django_db
+def test_a_copy_that_outlives_its_lease_never_replaces_published_bytes(
+    s3_backend, s3_bucket, api_client, headers, admin, monkeypatch
+):
+    """Attempt A validates PNG; its lease ends during the copy; attempt B publishes OTHER.
+
+    A's copy then runs with its source precondition still holding (staging holds PNG again, same
+    ETag), so only the destination precondition stops it from replacing B's bytes.
+    """
+
+    review = create_review(api_client, headers, admin)
+    data = intent(api_client, headers, admin, review["id"]).json()["data"]
+    media_id = data["media"]["id"]
+    assert upload_via_url(data, PNG) == 200
+    other = b"\x89PNG\r\n\x1a\n" + bytes(range(200, 256))
+    original = s3_backend.finalize
+
+    def lease_ends_mid_copy(*args, **kwargs):
+        monkeypatch.setattr(s3_backend, "finalize", original)
+        ReviewMedia.objects.filter(pk=media_id).update(
+            completion_lease_until=timezone.now() - timedelta(seconds=1)
+        )
+        assert upload_via_url(data, other) == 200
+        b = complete(api_client, headers, admin, review["id"], media_id)
+        assert b.status_code == 200, b.json()
+        assert upload_via_url(data, PNG) == 200  # same bytes, same ETag as A validated
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(s3_backend, "finalize", lease_ends_mid_copy)
+    a = complete(api_client, headers, admin, review["id"], media_id)
+    assert a.status_code == 200, a.json()
+    assert a.json()["data"]["status"] == "ready"
+    status, served = send("GET", a.json()["data"]["url"])
+    assert (status, served) == (200, other)
+
+
+@pytest.mark.s3
 @pytest.mark.s3_large
 @pytest.mark.django_db
 def test_a_500_mib_video_completes(s3_backend, s3_bucket, api_client, headers, admin):
@@ -567,7 +671,8 @@ def rule(rule_id: str, prefix: str, days: int) -> dict:
 @pytest.mark.s3
 def test_check_storage_round_trips_and_warns_without_a_staging_rule(s3_backend, s3_bucket):
     out, err = run_check_storage()
-    for step in ("stat_missing", "size_cap", "put", "conditional_copy", "final_metadata", "get"):
+    steps = ("stat_missing", "size_cap", "put", "conditional_copy", "no_overwrite", "get")
+    for step in (*steps, "final_metadata"):
         assert f"  {step}: ok" in out
     assert "check_storage: ok" in out
     assert "no lifecycle rule expires _staging/" in err

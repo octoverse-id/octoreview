@@ -453,9 +453,15 @@ def _phase_two(media: ReviewMedia) -> Outcome:
             media.id,
             MEDIA_TYPES[media.content_type].extension,
         )
-        files.finalize(
-            media.staging_key, final, content_type=media.content_type, if_version=info.version
-        )
+        try:
+            files.finalize(
+                media.staging_key, final, content_type=media.content_type, if_version=info.version
+            )
+        except files.FinalExists:
+            # An earlier attempt already published this media's bytes (its lease ended during the
+            # copy, or it died before phase 3). Published objects are never overwritten, so the
+            # bytes to validate are the ones already there.
+            return _validate_published(media, final)
         return Outcome(final_key=final)
     except files.PreconditionFailed:
         raise DomainError(
@@ -464,6 +470,18 @@ def _phase_two(media: ReviewMedia) -> Outcome:
         )
     except files.StorageError as exc:
         raise _storage_error(exc)
+
+
+def _validate_published(media: ReviewMedia, final: str) -> Outcome:
+    info = files.stat(final)
+    if info is None:
+        raise files.PreconditionFailed()  # removed meanwhile; the client completes again
+    if info.size != media.size_bytes:
+        return Outcome(final_key=final, invalid_reason="size_mismatch")
+    head = files.read_head(final, min(info.size, signatures.HEAD_BYTES), if_version=info.version)
+    if signatures.detect(head) != media.content_type:
+        return Outcome(final_key=final, invalid_reason="type_mismatch")
+    return Outcome(final_key=final)
 
 
 def _release_lease(review_id, media_id, attempt) -> None:

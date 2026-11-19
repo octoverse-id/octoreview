@@ -509,7 +509,7 @@ The storage protocol lives in `octoreview.media.storage`:
 create_upload(key, content_type, size_bytes, expires_in) -> UploadTarget(method, url, headers, expires_at)
 stat(key) -> ObjectInfo(size, content_type, version) | None     # version = ETag or generation
 read_head(key, n, if_version) -> bytes
-finalize(staging_key, final_key, content_type, if_version)       # conditional copy (7.4)
+finalize(staging_key, final_key, content_type, if_version)       # conditional copy, never overwrites (7.4)
 delete(key)
 download_url(key, expires_in) -> str
 supports_conditional_copy: bool
@@ -595,7 +595,13 @@ the media.
   with server-chosen metadata. S3 uses one `CopyObject` with `CopySourceIfMatch` and
   `MetadataDirective=REPLACE` (no multipart copy: S3 allows 5 GiB per copy and the ceiling is
   500 MiB). GCS uses `if_source_generation_match` and Azure `source_etag` (line 2). Local validates
-  the staged file and then runs `os.replace` onto the final path.
+  the staged file and then hard-links it onto the final path.
+- **A published object is never overwritten.** The copy also carries `If-None-Match: *` (local:
+  `link(2)`, which refuses an existing name). A copy that outlives its lease, while another attempt
+  publishes, therefore cannot replace those bytes. When the final key already holds an object (an
+  earlier attempt copied and then lost its lease or died), phase 2 validates that object (size,
+  then magic bytes) instead and publishes it, or rejects it as below. The S3 copy client never
+  retries on its own; the client repeats `complete`, which takes a fresh lease.
 - A failed precondition (a re-PUT changed the staging object) returns 409 `upload_changed`. The
   lease is released, the row stays `pending`, and the client runs `complete` again.
 - A storage error returns 503 `storage_unavailable` with `Retry-After`, `details.backend` and

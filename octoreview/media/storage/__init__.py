@@ -27,6 +27,11 @@ class PreconditionFailed(Exception):
     """The object changed since it was validated (a re-PUT); callers answer 409 upload_changed."""
 
 
+class FinalExists(Exception):
+    """The final key already holds an object. Published objects are never overwritten, so a copy
+    that outlives its completion lease cannot replace another attempt's bytes (spec 7.4)."""
+
+
 class CredentialsExpiring(Exception):
     """Less than the minimum URL lifetime of credential remains (503, docs/spec.md 7.8)."""
 
@@ -68,7 +73,11 @@ class StorageBackend:
         raise NotImplementedError
 
     def finalize(self, staging_key: str, final_key: str, *, content_type: str, if_version: str):
-        """Copy exactly the validated version to the final key; PreconditionFailed otherwise."""
+        """Copy exactly the validated version to a final key that does not exist yet.
+
+        PreconditionFailed when the staging object changed or vanished; FinalExists when the
+        final key is already taken (never overwritten).
+        """
 
         raise NotImplementedError
 

@@ -142,6 +142,9 @@ The role that runs octoreview signs every URL, so it needs the permissions the U
 - `complete` validates the staged object (size, then magic bytes) and copies exactly that version
   to `media/...` with `CopySourceIfMatch`, setting the content type itself. A re-PUT during
   completion fails the copy with 409 `upload_changed`; the client calls `complete` again.
+- The copy also carries `If-None-Match: *`, so a published object is never overwritten: a slow
+  copy that outlives its completion lease cannot replace the bytes a later attempt published.
+  When the final object already exists, `complete` validates it and publishes it.
 - Upload URLs stay valid until they expire, even after `complete`. A late PUT only rewrites the
   staging object, which the lifecycle rule removes; served bytes never change.
 - **The size guarantee is `complete`.** AWS S3 and the CI emulator enforce the signed
@@ -169,8 +172,10 @@ The role that runs octoreview signs every URL, so it needs the permissions the U
 
 Octoreview needs these behaviors from the store; `check_storage` checks each on your bucket:
 presigned PUT and GET (SigV4), `If-Match` on GET, `CopyObject` with `CopySourceIfMatch` and
-`MetadataDirective=REPLACE`, and missing keys answering 404. The size cap, lifecycle rules and
-bucket CORS are strongly recommended.
+`MetadataDirective=REPLACE`, and missing keys answering 404. The size cap, `If-None-Match` on
+`CopyObject` (AWS S3 and RustFS honor it), lifecycle rules and bucket CORS are strongly
+recommended; without `If-None-Match`, the completion lease is the only guard against a late copy
+replacing published media, and `check_storage` warns at `no_overwrite`.
 
 A store that ignores `CopySourceIfMatch` is not supported: it would publish whatever the staging
 object holds when the copy runs, not the validated version. `check_storage` fails at
@@ -226,6 +231,7 @@ failing step. On `s3`:
 | `put` | a real PUT through the presigned URL | the endpoint is unreachable from here, or `s3:PutObject` |
 | `stat`, `read_head` | HEAD and ranged GET with `If-Match` | `s3:GetObject` |
 | `conditional_copy` | a copy of a stale version is refused | the store ignores `CopySourceIfMatch` |
+| `no_overwrite` | a second copy onto a published key is refused (`If-None-Match`) | (warns) |
 | `finalize`, `final_metadata` | the conditional copy runs and sets the server-chosen type | the store keeps the upload's metadata |
 | `sign_download`, `get` | a real GET through a presigned URL | |
 | `delete` | the probe is removed | `s3:DeleteObject` |

@@ -13,8 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   extra `octoreview[s3]`). Presigned PUTs sign `Content-Type` and `Content-Length`; `complete`
   copies the validated version with `CopySourceIfMatch` and server-chosen metadata; reads are
   presigned GETs. URLs never outlive the signing credential (503
-  `storage_credentials_expiring`). `check_storage` gains real HTTP through the signed URLs and the
-  `stat_missing`, `cors`, `size_cap`, `conditional_copy`, `final_metadata` and `lifecycle` steps.
+  `storage_credentials_expiring`). A published object is never overwritten (`If-None-Match` on the
+  copy; `link(2)` on the local backend), so a copy that outlives its completion lease cannot
+  replace bytes another attempt published; `complete` validates and publishes an object an
+  earlier attempt already copied. `check_storage` gains real HTTP through the signed URLs and the
+  `stat_missing`, `cors`, `size_cap`, `conditional_copy`, `no_overwrite`, `final_metadata` and
+  `lifecycle` steps.
   `docs/storage.md` is the operator guide (IAM policy, bucket CORS, lifecycle rule, compatible
   stores and the emulator spike). `make test-storage` and the `storage-emulators` CI job run the
   S3 tests against a digest-pinned RustFS emulator.

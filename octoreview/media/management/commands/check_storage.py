@@ -137,6 +137,7 @@ class Command(BaseCommand):
             ),
         )
         if not local:
+            self._no_overwrite(staging, final, info.version)
             stored = self._step("final_metadata", lambda: files.stat(final))
             if stored is None or stored.content_type != FINAL_CONTENT_TYPE:
                 raise CommandError(
@@ -216,6 +217,22 @@ class Command(BaseCommand):
             "check_storage failed at step 'conditional_copy': the store copied a stale version, "
             "so it ignores CopySourceIfMatch. octoreview needs conditional copy to publish only "
             "validated bytes; see docs/storage.md for supported stores."
+        )
+
+    def _no_overwrite(self, staging: str, final: str, version: str) -> None:
+        """A second copy onto the published key must be refused (If-None-Match, spec 7.4)."""
+
+        try:
+            files.finalize(staging, final, content_type=FINAL_CONTENT_TYPE, if_version=version)
+        except files.FinalExists:
+            self.stdout.write("  no_overwrite: ok")
+            return
+        except (files.StorageError, files.PreconditionFailed) as exc:
+            raise CommandError(f"check_storage failed at step 'no_overwrite': {exc!r}") from exc
+        self._warn(
+            "the store overwrote a published object despite If-None-Match; the completion lease "
+            "is then the only guard against a late copy replacing published media "
+            "(docs/storage.md)."
         )
 
     def _local_get(self, url: str, final: str, body: bytes, now) -> None:
