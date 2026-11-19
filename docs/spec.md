@@ -1108,7 +1108,8 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
   5 minutes, three times (a clean local stack, a second run against the same volumes, a clean
   `s3` profile). The image build time is reported separately, and each run's time goes to the job
   summary.
-- **`edge` image.** Server `main` publishes `edge` and `sha-<commit>` images on `workflow_run` of CI,
+- **`edge` image.** Server `main` publishes `edge` and `sha-<commit>` images (`publish-image.yml`;
+  tags in [`versioning.md`](versioning.md)) on `workflow_run` of CI,
   only when `workflow_run.event == 'push'`, `head_branch == 'main'`,
   `head_repository.full_name == github.repository` and `conclusion == 'success'`. It builds
   `workflow_run.head_sha` after the same ancestry check that octonomy's `publish-image.yml` runs.
