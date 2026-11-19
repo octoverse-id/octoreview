@@ -49,6 +49,8 @@ class UploadTarget:
 class StorageBackend:
     name = "base"
     supports_conditional_copy = True
+    # True only for `local`, whose upload and download URLs point at this server's token views.
+    serves_token_urls = False
 
     def guard(self) -> None:
         if locks_held():
@@ -91,6 +93,11 @@ class StorageBackend:
 
         return 0
 
+    def expiration_rules(self) -> list | None:
+        """The bucket's enabled expiration rules, or None when the backend has no lifecycle."""
+
+        return None
+
 
 @lru_cache(maxsize=1)
 def get_backend() -> StorageBackend:
@@ -98,10 +105,15 @@ def get_backend() -> StorageBackend:
         from octoreview.media.storage.local import LocalBackend
 
         return LocalBackend()
+    if settings.STORAGE_BACKEND == "s3":
+        from octoreview.media.storage.s3 import S3Backend
+
+        return S3Backend()
     raise RuntimeError(f"Unsupported storage backend {settings.STORAGE_BACKEND!r}")
 
 
 STAGING_PREFIX = "_staging"
+MEDIA_PREFIX = "media"
 
 
 def staging_key(tenant_id: str, application_id: str, media_id) -> str:
@@ -109,4 +121,5 @@ def staging_key(tenant_id: str, application_id: str, media_id) -> str:
 
 
 def final_key(tenant_id, application_id, entity_id, review_id, media_id, extension) -> str:
-    return f"media/{tenant_id}/{application_id}/{entity_id}/{review_id}/{media_id}.{extension}"
+    scope = f"{tenant_id}/{application_id}/{entity_id}/{review_id}"
+    return f"{MEDIA_PREFIX}/{scope}/{media_id}.{extension}"

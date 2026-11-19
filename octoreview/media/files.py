@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from octoreview.media.storage import (
+    MEDIA_PREFIX,
+    STAGING_PREFIX,
     CredentialsExpiring,
     ObjectInfo,
     PreconditionFailed,
@@ -20,6 +22,8 @@ from octoreview.media.storage import (
 )
 
 __all__ = [
+    "MEDIA_PREFIX",
+    "STAGING_PREFIX",
     "CredentialsExpiring",
     "ObjectInfo",
     "PreconditionFailed",
@@ -29,11 +33,13 @@ __all__ = [
     "create_upload",
     "delete",
     "download_url",
+    "expiration_rules",
     "final_key",
     "finalize",
     "free_bytes",
     "open_file",
     "read_head",
+    "serves_token_urls",
     "staging_key",
     "stat",
     "sweep_staging",
@@ -44,6 +50,12 @@ __all__ = [
 
 def backend_name() -> str:
     return get_backend().name
+
+
+def serves_token_urls() -> bool:
+    """Whether `/media-uploads/{token}` and `/media-files/{token}` are live (local backend only)."""
+
+    return get_backend().serves_token_urls
 
 
 def url_expiry(requested: datetime) -> datetime:
@@ -88,6 +100,10 @@ def free_bytes() -> int | None:
 
 def sweep_staging(older_than: datetime) -> int:
     return get_backend().sweep_staging(older_than)
+
+
+def expiration_rules() -> list | None:
+    return get_backend().expiration_rules()
 
 
 def write_stream(key: str, chunks, *, limit: int) -> int:

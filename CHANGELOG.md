@@ -9,6 +9,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The `s3` storage backend for AWS S3 and S3-compatible stores (`OCTOREVIEW_STORAGE_BACKEND=s3`,
+  extra `octoreview[s3]`). Presigned PUTs sign `Content-Type` and `Content-Length`; `complete`
+  copies the validated version with `CopySourceIfMatch` and server-chosen metadata; reads are
+  presigned GETs. URLs never outlive the signing credential (503
+  `storage_credentials_expiring`). `check_storage` gains real HTTP through the signed URLs and the
+  `stat_missing`, `cors`, `size_cap`, `conditional_copy`, `final_metadata` and `lifecycle` steps.
+  `docs/storage.md` is the operator guide (IAM policy, bucket CORS, lifecycle rule, compatible
+  stores and the emulator spike). `make test-storage` and the `storage-emulators` CI job run the
+  S3 tests against a digest-pinned RustFS emulator.
+
+### Changed
+
+- The local token paths (`/media-uploads/{token}`, `/media-files/{token}`) answer 404 on a cloud
+  backend, and media tokens refuse an empty signing secret.
+- A replayed upload intent's URL is capped by the signing credential's lifetime, like a new one.
+
 - The API contract, frozen for the SDKs: `docs/openapi.yaml` (OpenAPI 3.1, every `/api/v1`
   operation with request and response schemas and the full error-code enum), `docs/errors.md`
   (one section per error code with status, details, fix and recovery), `docs/events.md` (envelope,

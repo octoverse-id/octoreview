@@ -336,7 +336,8 @@ def _replay_target(media: ReviewMedia, now) -> files.UploadTarget | None:
             key=media.staging_key,
             content_type=media.content_type,
             size_bytes=media.size_bytes,
-            expires_at=media.upload_expires_at,
+            # The signing credential may now expire before the row does (spec section 7.8).
+            expires_at=files.url_expiry(media.upload_expires_at),
             media_id=media.id,
         )
     except files.CredentialsExpiring:

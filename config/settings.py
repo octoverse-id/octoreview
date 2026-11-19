@@ -187,8 +187,8 @@ for _field, _default in MEDIA_POLICY_DEFAULTS.items():
 
 # Storage and media (docs/spec.md sections 7, 8 and 15).
 STORAGE_BACKEND = os.getenv("OCTOREVIEW_STORAGE_BACKEND", "local")
-# The s3 adapter lands in its own PR; azure and gcs arrive in release line 2.
-SUPPORTED_STORAGE_BACKENDS = ("local",)
+# azure and gcs arrive in release line 2.
+SUPPORTED_STORAGE_BACKENDS = ("local", "s3")
 if STORAGE_BACKEND not in SUPPORTED_STORAGE_BACKENDS:
     raise ImproperlyConfigured(
         f"OCTOREVIEW_STORAGE_BACKEND must be one of {', '.join(SUPPORTED_STORAGE_BACKENDS)}; "
@@ -218,6 +218,37 @@ if STORAGE_BACKEND == "local":
             raise ImproperlyConfigured(
                 f"{_name} is required with OCTOREVIEW_STORAGE_BACKEND=local; {_fix}."
             )
+STORAGE_S3_BUCKET = os.getenv("OCTOREVIEW_STORAGE_S3_BUCKET", "")
+STORAGE_S3_REGION = os.getenv("OCTOREVIEW_STORAGE_S3_REGION", "")
+STORAGE_S3_ENDPOINT_URL = os.getenv("OCTOREVIEW_STORAGE_S3_ENDPOINT_URL", "").rstrip("/")
+# Presigned URLs are signed for this host, which browsers and SDK callers must reach; the server
+# itself talks to STORAGE_S3_ENDPOINT_URL (a compose service name, for example).
+STORAGE_S3_PUBLIC_ENDPOINT_URL = (
+    os.getenv("OCTOREVIEW_STORAGE_S3_PUBLIC_ENDPOINT_URL", "").rstrip("/")
+    or STORAGE_S3_ENDPOINT_URL
+)
+STORAGE_S3_ADDRESSING_STYLE = os.getenv("OCTOREVIEW_STORAGE_S3_ADDRESSING_STYLE", "auto")
+if STORAGE_BACKEND == "s3":
+    for _name, _value, _fix in (
+        ("OCTOREVIEW_STORAGE_S3_BUCKET", STORAGE_S3_BUCKET, "set the bucket name"),
+        ("OCTOREVIEW_STORAGE_S3_REGION", STORAGE_S3_REGION, "set the bucket region"),
+    ):
+        if not _value:
+            raise ImproperlyConfigured(
+                f"{_name} is required with OCTOREVIEW_STORAGE_BACKEND=s3; {_fix}."
+            )
+    if STORAGE_S3_ADDRESSING_STYLE not in {"auto", "path", "virtual"}:
+        raise ImproperlyConfigured(
+            "OCTOREVIEW_STORAGE_S3_ADDRESSING_STYLE must be auto, path or virtual; use path for "
+            "a store reached by a bare host name (a compose service)."
+        )
+    try:
+        import boto3  # noqa: F401
+    except ImportError as exc:
+        raise ImproperlyConfigured(
+            "OCTOREVIEW_STORAGE_BACKEND=s3 needs boto3; install the extra with "
+            "`uv sync --extra s3` (the published image already has it)."
+        ) from exc
 MEDIA_PUBLIC_BASE_URL = os.getenv("OCTOREVIEW_MEDIA_PUBLIC_BASE_URL", "").rstrip("/")
 UPLOAD_URL_TTL_SECONDS = env_int("OCTOREVIEW_UPLOAD_URL_TTL_SECONDS", 900, minimum=60)
 MEDIA_URL_TTL_SECONDS = env_int("OCTOREVIEW_MEDIA_URL_TTL_SECONDS", 900, minimum=60)

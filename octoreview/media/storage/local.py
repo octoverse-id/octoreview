@@ -30,6 +30,7 @@ from octoreview.media.storage import (
 class LocalBackend(StorageBackend):
     name = "local"
     supports_conditional_copy = True
+    serves_token_urls = True
 
     def __init__(self, root: str | None = None) -> None:
         self.root = Path(root or settings.MEDIA_ROOT).resolve()
