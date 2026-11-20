@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The operator console (django-unfold, copied from octonomy): mounted at `/admin/` only with
+  `OCTOREVIEW_ADMIN_ENABLED` (off in the image, on in compose), superuser-only, every model
+  read-only. Moderation actions (reviews: publish, reject, hide, remove; media: approve,
+  reject) run through the lifecycle services as `admin:<username>`; publish and approve go
+  through a confirmation page that carries the version guard. Sessions, CSRF and WhiteNoise
+  serve the console only (the REST API is unchanged), static files are collected into the
+  image, `check --deploy` warns while it is on with DEBUG off, and `docker-smoke` checks that it
+  is absent by default and serves when enabled.
 - Domain metrics as JSON log lines, emitted after commit and free of personal data:
   `review.created|published|rejected`, `media.intent|ready|rejected`, `quota.rejected`,
   `storage.call` (timed once in the storage facade, with an outcome), `cleanup_media.deleted|failed`,

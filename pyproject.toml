@@ -13,6 +13,8 @@ dependencies = [
   "dj-database-url>=2.2,<4.0",
   "django-cors-headers>=4.4,<5.0",
   "gunicorn>=23.0,<24.0",
+  "django-unfold>=0.101,<0.103",
+  "whitenoise>=6.12,<7.0",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +46,8 @@ filterwarnings = [
   # LIMIT/OFFSET over a query with no ORDER BY is undefined in SQL; make it a test failure
   # (octonomy issue #162).
   "error::django.core.paginator.UnorderedObjectListWarning",
+  # WhiteNoise warns when STATIC_ROOT does not exist; tests never run collectstatic.
+  "ignore:No directory at:UserWarning",
 ]
 
 [tool.coverage.run]
@@ -68,7 +72,9 @@ name = "Domain layers"
 type = "layers"
 layers = [
   "octoreview.openapi",
-  "octoreview.api",
+  # Both are presentation: the REST API and the operator console call the lifecycle services
+  # and never each other.
+  "octoreview.api | octoreview.console",
   "octoreview.lifecycle",
   "octoreview.media",
   "octoreview.reviews",
@@ -83,6 +89,7 @@ name = "Storage adapters stay inside octoreview.media"
 type = "forbidden"
 source_modules = [
   "octoreview.api",
+  "octoreview.console",
   "octoreview.lifecycle",
   "octoreview.reviews",
   "octoreview.entities",

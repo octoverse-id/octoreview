@@ -65,6 +65,10 @@ for path in live ready; do
   ok "health_$path"
 done
 
+status=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$port/admin/")
+[ "$status" = 404 ] || fail "admin_off (HTTP $status; the console must be opt-in)"
+ok admin_off
+
 docker logs "$name" 2>&1 | grep -q '"Using worker: gthread"' || fail "gthread"
 ok gthread
 # Every log line is JSON (docs/spec.md section 16): no plain-text banner leaks into the stream.
@@ -75,4 +79,23 @@ for line in sys.stdin:
         json.loads(line)
 ' || fail "json_logs"
 ok json_logs
+# The console, when enabled, renders and its collected static files serve through WhiteNoise.
+admin=$name-admin
+admin_port=$((port + 1))
+trap 'docker rm -f "$name" "$admin" >/dev/null 2>&1 || true' EXIT
+docker run -d --name "$admin" "${env_args[@]}" -e OCTOREVIEW_ADMIN_ENABLED=true \
+  -e OCTOREVIEW_PUBLIC_BASE_URL="http://localhost:$admin_port" -p "$admin_port:8000" "$image" \
+  >/dev/null || fail "admin_start"
+login=""
+for _ in $(seq 1 30); do
+  if login=$(curl -fsS "http://localhost:$admin_port/admin/login/" 2>/dev/null); then break; fi
+  sleep 1
+done
+[ -n "$login" ] || fail "admin_login"
+ok admin_login
+stylesheet=$(printf '%s' "$login" | grep -o '/static/[^"]*\.css' | head -n1)
+[ -n "$stylesheet" ] || fail "admin_static (the login page links no stylesheet)"
+status=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$admin_port$stylesheet")
+[ "$status" = 200 ] || fail "admin_static ($stylesheet answered $status)"
+ok admin_static
 echo "docker-smoke: ok ($image)"

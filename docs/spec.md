@@ -927,7 +927,13 @@ Errors on the local token paths carry CORS headers.
 - **Admin.** The django-unfold admin is copied from octonomy and covers service clients, grants,
   entities, reviews (moderation actions through the domain services) and media. Status, rating and
   counter fields are read-only in it. `OCTOREVIEW_ADMIN_ENABLED` defaults to off in the production
-  image and on in compose.
+  image and on in compose. The registrations live in `octoreview.console`, a presentation layer
+  beside `octoreview.api`. Every model is read-only. Moderation actions (reviews: publish, reject,
+  hide, remove; media: approve, reject) call the lifecycle services with an `admin:<username>`
+  actor. Publish and approve go through a confirmation page that shows the content and carries
+  `expected_version` / `expected_media_version`, so the version guard of 4.4 holds. The site
+  admits active superusers only, and `check --deploy` warns (`octoreview.W001`) when it is on with
+  DEBUG off. [`operations.md`](operations.md) covers enabling it.
 
 ## 14. Management commands
 

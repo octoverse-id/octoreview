@@ -63,8 +63,16 @@ SECRET_KEY = require_secret("DJANGO_SECRET_KEY", debug_default="local-dev-secret
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS") or (["*"] if DEBUG else [])
 
 INSTALLED_APPS = [
+    # Unfold precedes the admin so its templates win. BasicAppConfig, not unfold's default
+    # config, which would swap in a bare UnfoldAdminSite and drop the superuser-only gate in
+    # config/adminsite.py (copied from octonomy).
+    "unfold.apps.BasicAppConfig",
+    "config.admin.OctoreviewAdminConfig",
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     "rest_framework",
     "drf_spectacular",
     "octoreview.core",
@@ -76,15 +84,62 @@ INSTALLED_APPS = [
     "octoreview.media",
     "octoreview.lifecycle",
     "octoreview.openapi",
+    "octoreview.console",
     "corsheaders",
 ]
 
+# Sessions, CSRF, auth and messages serve the optional admin only. The REST API is unaffected:
+# DRF has no session authentication here (service keys are the only credential), and DRF views
+# are CSRF-exempt (tests/console/test_rest_unaffected.py). WhiteNoise sits right after
+# SecurityMiddleware, as it documents, so a static hit skips the rest of the chain.
 MIDDLEWARE = [
     "octoreview.core.middleware.RequestContextMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ]
+        },
+    }
+]
+
+# The opt-in operator console (docs/operations.md "Admin console"). Mounted at /admin/ only when
+# true; the site admits active superusers only (config/adminsite.py). Off in the image, on in
+# compose (docs/spec.md section 15).
+ADMIN_ENABLED = env_bool("OCTOREVIEW_ADMIN_ENABLED", False)
+UNFOLD = {
+    "SITE_TITLE": "Octoreview",
+    "SITE_HEADER": "Octoreview",
+    "SITE_SUBHEADER": "Operator console",
+    "SITE_URL": "https://github.com/octoverse-id/octoreview",
+}
+
+# Bundled static files only (the admin's), collected into the image and served by WhiteNoise.
+# Compressed but not manifest-hashed, so a page renders even where collectstatic never ran
+# (tests, `runserver`); WhiteNoise then serves from the app finders when DEBUG is on.
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
