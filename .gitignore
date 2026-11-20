@@ -6,6 +6,7 @@ code-review/*
 .env
 .env.*
 !.env.example
+!deploy/.env.production.example
 .octoreview-dev.env
 .DS_Store
 .idea/
