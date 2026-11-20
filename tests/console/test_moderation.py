@@ -163,3 +163,58 @@ def test_the_key_hash_never_renders(console, root_client, key):
     assert page.status_code == 200
     assert client.hashed_key.encode() not in page.content
     assert b"hashed_key" not in page.content
+
+
+def test_publishing_shows_every_attachment_that_goes_public(
+    console, root_client, pending, api_client, headers, key
+):
+    """Media uploaded to a pending review carry moderation `none` and go public with it."""
+
+    assert upload(api_client, headers, key, pending.id).status_code == 200
+    assert upload(api_client, headers, key, pending.id).status_code == 200
+    page = act(root_client, REVIEWS, "publish_selected", pending.id).content.decode()
+    assert "Attachments that go public with it" in page
+    assert page.count("/api/v1/media-files/") == 2
+
+
+def test_a_review_without_attachments_says_so(console, root_client, pending):
+    page = act(root_client, REVIEWS, "publish_selected", pending.id).content.decode()
+    assert "No attachments." in page
+
+
+def test_several_media_of_one_review_approve_together(
+    console, root_client, api_client, headers, key
+):
+    review = create_review(api_client, headers, key)
+    set_settings(moderation_mode="pre_moderation")
+    for _ in range(2):
+        assert upload(api_client, headers, key, review["id"]).status_code == 200
+    items = list(ReviewMedia.objects.order_by("created_at"))
+    page = act(root_client, MEDIA, "approve_selected", *(m.id for m in items)).content.decode()
+    assert "No attachments." not in page  # media rows have no attachment list
+    parent = Review.objects.get(pk=review["id"])
+    versions = {}
+    for media in items:
+        versions[f"version_{media.id}"] = parent.version
+        versions[f"media_version_{media.id}"] = parent.media_version
+    act(root_client, MEDIA, "approve_selected", *(m.id for m in items), confirm="yes", **versions)
+    assert {m.moderation_status for m in ReviewMedia.objects.all()} == {ModerationStatus.APPROVED}
+
+
+def test_a_bulk_approval_still_refuses_an_outside_change(
+    console, root_client, api_client, headers, key
+):
+    review = create_review(api_client, headers, key)
+    set_settings(moderation_mode="pre_moderation")
+    assert upload(api_client, headers, key, review["id"]).status_code == 200
+    media = ReviewMedia.objects.get()
+    parent = Review.objects.get(pk=review["id"])
+    shown = {
+        f"version_{media.id}": parent.version,
+        f"media_version_{media.id}": parent.media_version,
+    }
+    # Another upload completes after the page rendered: media_version moves on.
+    assert upload(api_client, headers, key, review["id"]).status_code == 200
+    act(root_client, MEDIA, "approve_selected", media.id, confirm="yes", **shown)
+    media.refresh_from_db()
+    assert media.moderation_status == ModerationStatus.PENDING

@@ -20,6 +20,14 @@ refuses anything that changed after this page rendered.
         <input type="hidden" name="media_version_{{ row.id }}" value="{{ row.media_version }}">
         <strong>{{ row.label }}</strong>
         {% for line in row.details %}<p>{{ line }}</p>{% endfor %}
+        {% if row.attachments %}
+        <p>Attachments that go public with it:</p>
+        <ul>
+          {% for item in row.attachments %}
+          <li>{{ item.label }}{% if item.url %} <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">view</a>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% elif "attachments" in row %}<p>No attachments.</p>{% endif %}
         {% if row.url %}<p><a href="{{ row.url }}" target="_blank" rel="noopener noreferrer">View the file</a></p>{% endif %}
       </li>
       {% endfor %}

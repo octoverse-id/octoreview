@@ -22,7 +22,7 @@ from octoreview.lifecycle import transitions
 from octoreview.lifecycle.media import moderate_media
 from octoreview.lifecycle.services import transition_review
 from octoreview.media import selectors as media_selectors
-from octoreview.media.models import ReviewMedia
+from octoreview.media.models import MediaStatus, ReviewMedia
 from octoreview.reviews.models import Review, ReviewRevision
 from octoreview.service_auth.models import ServiceClient, ServiceClientGrant
 
@@ -193,19 +193,33 @@ class ReviewAdmin(ModerationModelAdmin):
     @admin.action(description="Publish selected reviews (after confirming their content)")
     def publish_selected(self, request, queryset):
         if request.POST.get("confirm") != "yes":
-            rows = [
-                {
-                    "id": review.id,
-                    "label": f"{'★' * review.rating} {review.title or '(no title)'}",
-                    "details": [
-                        review.body or "(no body)",
-                        f"status {review.status}; {review.ready_media_count} media item(s)",
-                    ],
-                    "version": review.version,
-                    "media_version": review.media_version,
-                }
-                for review in queryset
-            ]
+            now = timezone.now()
+            rows = []
+            for review in queryset:
+                # Publishing makes the review's ready attachments public too (media uploaded
+                # while it was pending carry moderation status `none`), so the moderator sees
+                # each one here, not only a count.
+                attachments = [
+                    {
+                        "label": f"{media.kind} {media.content_type}, {media.size_bytes} bytes",
+                        "url": media_selectors.media_url(
+                            media, media_selectors.MODERATOR, now=now
+                        ).get("url"),
+                    }
+                    for media in review.media.filter(status=MediaStatus.READY).order_by(
+                        "position", "created_at", "id"
+                    )
+                ]
+                rows.append(
+                    {
+                        "id": review.id,
+                        "label": f"{'★' * review.rating} {review.title or '(no title)'}",
+                        "details": [review.body or "(no body)", f"status {review.status}"],
+                        "attachments": attachments,
+                        "version": review.version,
+                        "media_version": review.media_version,
+                    }
+                )
             return confirm_page(
                 self, request, queryset, action="publish_selected", title="Publish", rows=rows
             )
@@ -282,16 +296,23 @@ class ReviewMediaAdmin(ModerationModelAdmin):
                 self, request, queryset, action="approve_selected", title="Approve", rows=rows
             )
 
+        # Each approval adds exactly 1 to its review's media_version (touch_review). Several
+        # items of one review approved together therefore chain: the first is checked against
+        # the versions the page showed, each later one against the previous approval's result.
+        # A change by anyone else still mismatches under the review lock and is refused.
+        chained: dict = {}
+
         def approve(media, ctx):
-            expected_version, expected_media_version = versions_from(request, media.id)
+            expected = chained.get(media.review_id) or versions_from(request, media.id)
             moderate_media(
                 media.review_id,
                 media.id,
                 "approve",
                 ctx,
-                expected_version=expected_version,
-                expected_media_version=expected_media_version,
+                expected_version=expected[0],
+                expected_media_version=expected[1],
             )
+            chained[media.review_id] = (expected[0], expected[1] + 1)
 
         self.run_each(request, queryset, approve, "Approved")
         return None
