@@ -29,7 +29,12 @@ from django.db import connection, transaction
 from django.db.models import Count, Min, Q
 from django.utils import timezone
 
-from octoreview.core.metrics import OUTBOX_DEAD_LETTER_COUNT, OUTBOX_DISPATCH_SUMMARY, emit_metric
+from octoreview.core.metrics import (
+    OUTBOX_DEAD_LETTER_COUNT,
+    OUTBOX_DISPATCH_SUMMARY,
+    OUTBOX_LAG_SECONDS,
+    emit_metric,
+)
 from octoreview.events.models import OutboxEvent
 from octoreview.events.services import AUTHOR_ERASED
 
@@ -308,6 +313,8 @@ def _emit_dispatch_metrics(summary: dict[str, int]) -> None:
     emit_metric(
         OUTBOX_DISPATCH_SUMMARY, **summary, backlog=backlog["count"], lag_seconds=lag_seconds
     )
+    # The alerting signal on its own (docs/operations.md: lag over 10 minutes).
+    emit_metric(OUTBOX_LAG_SECONDS, seconds=lag_seconds, backlog=backlog["count"])
     emit_metric(
         OUTBOX_DEAD_LETTER_COUNT,
         count=OutboxEvent.objects.filter(status=OutboxEvent.Status.DEAD_LETTER).count(),

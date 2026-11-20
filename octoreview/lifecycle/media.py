@@ -19,6 +19,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from octoreview.audit import services as audit
+from octoreview.core import metrics
 from octoreview.core.audit_context import AuditContext
 from octoreview.core.db import holding_locks
 from octoreview.core.errors import DomainError, NotFoundError
@@ -121,6 +122,15 @@ def _locked(review_id, *, media_id=None, settings_row: bool = False):
             raise NotFoundError()
     with holding_locks():
         yield review, media
+
+
+def _metric_scope(media: ReviewMedia) -> dict:
+    return {
+        "tenant_id": media.tenant_id,
+        "application_id": media.application_id,
+        "kind": media.kind,
+        "backend": files.backend_name(),
+    }
 
 
 def _storage_error(exc: files.StorageError) -> DomainError:
@@ -272,6 +282,15 @@ def create_intent(review_id, request: IntentRequest, ctx: AuditContext) -> Inten
         if quota is not None:
             usage = selectors.storage_usage(review.tenant_id, review.application_id, now=now)
             if usage["stored_bytes"] + usage["reserved_bytes"] + request.size_bytes > quota:
+                # Emitted now, not on commit: this transaction rolls back with the 409.
+                metrics.emit_metric(
+                    metrics.QUOTA_REJECTED,
+                    tenant_id=review.tenant_id,
+                    application_id=review.application_id,
+                    kind=request.kind,
+                    backend=files.backend_name(),
+                    stage="intent",
+                )
                 raise DomainError(
                     "The application's storage quota is full; delete media or raise "
                     "max_storage_bytes.",
@@ -309,6 +328,9 @@ def create_intent(review_id, request: IntentRequest, ctx: AuditContext) -> Inten
                 raise
         else:
             _audit(media, "review_media.intent", ctx, size_bytes=request.size_bytes)
+            metrics.emit_on_commit(
+                metrics.MEDIA_INTENT, **_metric_scope(media), size_bytes=request.size_bytes
+            )
     if replayed is not None:
         return IntentResult(replayed, _replay_target(replayed, now), created=False)
     return IntentResult(media, target, created=True)
@@ -544,6 +566,13 @@ def _phase_three(review_id, media_id, attempt, outcome: Outcome, ctx) -> ReviewM
             if error is None and reason is not None:
                 media.status = MediaStatus.INVALID
                 media.invalid_reason = reason
+                metrics.emit_on_commit(
+                    metrics.MEDIA_REJECTED, **_metric_scope(media), reason=reason
+                )
+                if reason == "over_quota":
+                    metrics.emit_on_commit(
+                        metrics.QUOTA_REJECTED, **_metric_scope(media), stage="complete"
+                    )
                 media.completion_attempt_id = None
                 media.completion_lease_until = None
                 media.save()
@@ -571,6 +600,9 @@ def _phase_three(review_id, media_id, attempt, outcome: Outcome, ctx) -> ReviewM
                 touch_review(review)
                 _audit(media, "review_media.ready", ctx)
                 _event(media, "review_media.ready", ctx)
+                metrics.emit_on_commit(
+                    metrics.MEDIA_READY, **_metric_scope(media), size_bytes=media.size_bytes
+                )
                 delete_after.append(media.staging_key)
             result = media
     _delete_quietly(delete_after)
@@ -732,6 +764,11 @@ def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
         result.swept = files.sweep_staging(now - timedelta(seconds=STAGING_SWEEP_AGE_SECONDS))
     except files.StorageError as exc:
         result.failed.append(f"sweep:{exc.operation}")
+    backend = files.backend_name()
+    metrics.emit_metric(
+        metrics.CLEANUP_DELETED, count=result.deleted, swept=result.swept, backend=backend
+    )
+    metrics.emit_metric(metrics.CLEANUP_FAILED, count=len(result.failed), backend=backend)
     return result
 
 

@@ -17,6 +17,7 @@ keeps it, the error catalog, the event catalog and the SDK surface in step with 
 - [Events](docs/events.md): the outbox envelope, webhook signature and every event payload
 - [SDK surface](docs/sdk-surface.yaml): each operation's Go, PHP and JS method, retry class and parameters ([table](docs/sdk-surface.md))
 - [Compose stack](compose.yaml): the development stack (`make up`, `make up-s3`, `make dev-env`, `make quickstart`)
+- [Operations](docs/operations.md): metrics and their fields, alerts, scheduled jobs, failure playbooks, erasure copies, secret rotation
 - [Deployment](docs/deployment.md): the container image, gunicorn settings, migrations, reverse-proxy timeouts and body limits
 - [Storage](docs/storage.md): backends, the S3 IAM policy, bucket CORS and lifecycle rules, compatible stores, check_storage steps
 - [Environment](.env.example): every setting with a comment

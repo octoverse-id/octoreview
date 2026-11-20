@@ -13,6 +13,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from octoreview.audit import services as audit
+from octoreview.core import metrics
 from octoreview.core.audit_context import AuditContext
 from octoreview.core.db import unique_violation
 from octoreview.core.errors import DomainError
@@ -86,6 +87,19 @@ def _emit(review: Review, event_type: str, ctx: AuditContext, **extra) -> None:
         payload={**review_event_payload(review), **extra},
         audit_context=ctx,
     )
+    metric = _REVIEW_METRICS.get(event_type)
+    if event_type == "review.status_changed" and review.status == ReviewStatus.REJECTED:
+        metric = metrics.REVIEW_REJECTED
+    if metric is not None:
+        metrics.emit_on_commit(
+            metric, tenant_id=review.tenant_id, application_id=review.application_id
+        )
+
+
+_REVIEW_METRICS = {
+    "review.created": metrics.REVIEW_CREATED,
+    "review.published": metrics.REVIEW_PUBLISHED,
+}
 
 
 def emit_rating_changed(entity: Entity, ctx: AuditContext) -> None:

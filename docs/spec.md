@@ -642,7 +642,9 @@ A retry after a proxy 504 meets `complete_in_progress` until the lease ends.
 **Required settings.**
 - `OCTOREVIEW_PUBLIC_BASE_URL`: absolute URLs are built from it, never from `Host`.
 - `OCTOREVIEW_MEDIA_TOKEN_SECRET`: boot fails without it.
-- `OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS`: also accepted, for verification during rotation.
+- `OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS`: also accepted, for verification during rotation. A
+  token's key id is a fingerprint of the secret that signed it, so tokens issued before a
+  rotation keep verifying while the old value is the previous secret.
 
 **Tokens.** HMAC-signed, bound to purpose (upload or download, with distinct salts), media id,
 storage key, declared size, expiry and key id.
@@ -984,7 +986,8 @@ and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
 
 ## 16. Observability and operations
 
-- **Metrics** (emitted with octonomy's `emit_metric`):
+- **Metrics** (emitted with octonomy's `emit_metric`; [`operations.md`](operations.md) lists each
+  with its fields, the alerts and the scheduled jobs):
   - `review.created|published|rejected`;
   - `media.intent|ready|rejected`, with reason and backend;
   - `storage.call`, with backend, operation, latency and outcome;
