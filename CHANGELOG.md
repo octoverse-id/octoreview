@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Deployment manifests. `deploy/kubernetes/` has the namespace, ConfigMap (`s3` backend), Secret
+  template, IRSA ServiceAccount, Deployment, Service, Ingress and migrate Job, plus CronJobs for
+  the outbox dispatcher, `cleanup_media`, `prune_outbox_events` and the nightly
+  `recompute_ratings --check`. Every pod is non-root with a read-only root filesystem and no API
+  token. `deploy/docker/compose.yaml` and `deploy/.env.production.example` cover a single host.
+  `scripts/smoke-upload.sh` smoke-tests a deployed instance and cleans up; `compose-quickstart`
+  runs it. `make version-check` also requires the deploy image tags to name the release.
 - The operator console (django-unfold, copied from octonomy): mounted at `/admin/` only with
   `OCTOREVIEW_ADMIN_ENABLED` (off in the image, on in compose), superuser-only, every model
   read-only. Moderation actions (reviews: publish, reject, hide, remove; media: approve,

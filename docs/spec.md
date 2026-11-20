@@ -811,8 +811,10 @@ namespace_type, namespace_id, resource_type, resource_id, request_id, data}`. Pa
   signature includes a timestamp (gate d22a).
 
 **Dispatcher** (`manage.py dispatch_outbox_events`, ported from octonomy):
-- Claims events, retries with backoff, and moves exhausted events to `dead_letter`.
-- `--retry-failed` replays failed and dead-letter events.
+- Claims events, retries with backoff, and moves exhausted events to `dead_letter`. A scheduled
+  run delivers pending events and failed ones whose backoff has elapsed.
+- `--retry-failed` is an operator replay of failed and dead-letter events, ignoring the backoff;
+  it is never scheduled (the manifests run the plain command).
 - Dead letters raise an alert (the `outbox.dead_letter_count` metric).
 
 **Pruning** (`manage.py prune_outbox_events`):
@@ -1007,7 +1009,7 @@ and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
   (`X-Amz-*`, `sig`, `X-Goog-*`) from every message and exception text, and unmatched routes log
   `"<unresolved>"`. The image ships with gunicorn's access log off. `docs/operations.md` tells
   operators to redact the token paths in proxy and CDN logs.
-- **Deployment.** `deploy/docker` and `deploy/kubernetes` (with CronJobs for `cleanup_media`, the
+- **Deployment** ([`deployment.md`](deployment.md)). `deploy/docker` and `deploy/kubernetes` (with CronJobs for `cleanup_media`, the
   outbox dispatcher and the nightly check). Kubernetes requires a cloud storage backend. Rate
   limiting is out of scope: put an API gateway or ingress limit in front (TODOS DEP-3).
 - **Smoke.** `scripts/smoke-upload.sh` runs health, create review, intent, PUT, complete and media

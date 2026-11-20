@@ -38,6 +38,24 @@ before uploading); `precondition_failed` (the upload changed during `complete`);
 (an earlier attempt already published the bytes); `credentials_expiring`; and `error`. Only
 `error` is a fault. The others are answers the protocol expects.
 
+## Smoke test
+
+`scripts/smoke-upload.sh` checks a deployed instance end to end: health, create a review,
+upload a photo through intent, PUT and complete, then fetch its URL and compare the bytes. It
+deletes the media item and the review it created, names the failed step and its request id, and
+never prints the key. Give it a key for a dedicated smoke application (scopes `reviews:read`,
+`reviews:write`, `media:write`):
+
+```sh
+OCTOREVIEW_BASE_URL=https://reviews.example.com OCTOREVIEW_API_KEY=... \
+OCTOREVIEW_TENANT_ID=mbizmarket OCTOREVIEW_SMOKE_APPLICATION_ID=smoke scripts/smoke-upload.sh
+```
+
+Run it after each deployment and from your monitoring on a schedule. A failed `upload_put` or
+`media_fetch` points at the bucket (CORS, credentials, a presign host the network cannot reach);
+`check_storage` from a pod narrows it down. The CI `compose-quickstart` job runs it against the
+compose stack on both backends.
+
 ## Alerts
 
 | Alert | Condition | First look |
@@ -45,16 +63,17 @@ before uploading); `precondition_failed` (the upload changed during `complete`);
 | Outbox lag | `outbox.lag_seconds` `seconds` above 600 | Is the dispatcher running? Is the webhook receiver answering? |
 | Storage errors | `storage.call` with `outcome` `error` above 5% of all `storage.call` for 5 minutes | `manage.py check_storage` names the failing step; see below |
 | Cleanup failing | `cleanup_media.failed` `count` above 0 on every run for 1 hour | The command lists the failed keys on stderr and exits 1 |
-| Dead letters | `outbox.dead_letter_count` `count` above 0 | Fix the receiver, then `dispatch_outbox_events --retry-failed` |
+| Dead letters | `outbox.dead_letter_count` `count` above 0 | Fix the receiver, then replay once by hand: `dispatch_outbox_events --retry-failed` (it ignores the backoff and gives dead letters a fresh retry budget) |
 
 ## Scheduled jobs
 
-Run each as a Kubernetes CronJob with `concurrencyPolicy: Forbid` (or cron on a single host),
+`deploy/kubernetes/` ships each as a CronJob with `concurrencyPolicy: Forbid`, and
+`deploy/docker/compose.yaml` runs the dispatcher and cleanup as loops. Elsewhere, schedule them
 with the same image and environment as the server:
 
 | Command | Schedule | Why |
 | --- | --- | --- |
-| `python manage.py dispatch_outbox_events` | every minute | delivers events (webhook transport); `--retry-failed` also retries failed ones |
+| `python manage.py dispatch_outbox_events` | every minute | delivers events (webhook transport) and retries failed ones after their backoff; never schedule `--retry-failed`, which replays dead letters |
 | `python manage.py cleanup_media` | every 15 minutes | deletes abandoned uploads and the media of removed reviews; exits 1 on a failed key |
 | `python manage.py prune_outbox_events` | daily | drops delivered and old dead-letter events (`--published-older-than`, `--dead-letter-older-than`) |
 | `python manage.py recompute_ratings --check` | nightly | exits non-zero and lists rating or media-count mismatches; writes nothing |

@@ -1,0 +1,54 @@
+# One-shot migration: run it to completion before rolling out a new image (and on the first
+# install). A Job's pod template is immutable, so delete it before re-applying for a release:
+#   kubectl -n octoreview delete job octoreview-migrate --ignore-not-found
+#   kubectl -n octoreview apply -f migrate-job.yaml
+#   kubectl -n octoreview wait --for=condition=complete job/octoreview-migrate --timeout=300s
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: octoreview-migrate
+  namespace: octoreview
+  labels:
+    app.kubernetes.io/name: octoreview
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: octoreview
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: octoreview
+      # octoreview never calls the Kubernetes API; a mounted API token would turn an app-level
+      # RCE into cluster access (IRSA projects its own token regardless).
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+          # `args`, not `command`: the image entrypoint still runs `manage.py check` first.
+          args: ["python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - configMapRef:
+                name: octoreview-config
+            - secretRef:
+                name: octoreview-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

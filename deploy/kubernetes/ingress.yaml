@@ -1,0 +1,31 @@
+# ingress-nginx annotations; other controllers have equivalents (docs/deployment.md).
+#
+# `complete` copies an upload inside the request, for up to OCTOREVIEW_COMPLETE_LEASE_SECONDS
+# (900), so reads may stay open that long. Upload bodies never pass through here on the s3
+# backend (they go straight to the bucket), so the default body size is enough.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: octoreview
+  namespace: octoreview
+  labels:
+    app.kubernetes.io/name: octoreview
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["reviews.example.com"]
+      secretName: octoreview-tls
+  rules:
+    - host: reviews.example.com
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: octoreview
+                port:
+                  name: http

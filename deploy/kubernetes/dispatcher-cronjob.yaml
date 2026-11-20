@@ -1,0 +1,59 @@
+# Delivers outbox events to the webhook. Without it, events pile up and outbox.lag_seconds
+# alerts (docs/operations.md).
+# concurrencyPolicy Forbid: a slow run is never overlapped by the next one.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: octoreview-dispatcher
+  namespace: octoreview
+  labels:
+    app.kubernetes.io/name: octoreview
+    app.kubernetes.io/component: dispatcher
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: octoreview
+            app.kubernetes.io/component: dispatcher
+        spec:
+          restartPolicy: Never
+          serviceAccountName: octoreview
+          # octoreview never calls the Kubernetes API; a mounted API token would turn an app-level
+          # RCE into cluster access (IRSA projects its own token regardless).
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: dispatcher
+              image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+              # `args`, not `command`: the image entrypoint still runs `manage.py check` first.
+              # No --retry-failed: that is the operator's dead-letter replay (docs/operations.md).
+              args: ["python", "manage.py", "dispatch_outbox_events", "--limit", "100"]
+              envFrom:
+                - configMapRef:
+                    name: octoreview-config
+                - secretRef:
+                    name: octoreview-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

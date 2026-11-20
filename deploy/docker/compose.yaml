@@ -1,0 +1,100 @@
+# A single-host production deployment (docs/deployment.md "Single host with Docker").
+#
+# Not the development stack (the repository root's compose.yaml turns DEBUG on and seeds a demo
+# key). This one runs the published image with gunicorn, a one-shot migration, the outbox
+# dispatcher and the media cleanup.
+#
+# Setup:
+#   1. cp deploy/.env.production.example deploy/docker/.env && chmod 600 deploy/docker/.env
+#      Fill in the secrets, DATABASE_URL (pointing at the "db" service) and POSTGRES_PASSWORD.
+#   2. cd deploy/docker && docker compose up -d --wait
+#      (--wait returns once "migrate" exited 0 and "app" is healthy.)
+#   3. Put a TLS reverse proxy in front of 127.0.0.1:8000 (docs/deployment.md has the proxy
+#      settings) and create a service key:
+#        docker compose exec app python manage.py create_service_token --name mbizmarket \
+#          --tenant mbizmarket --application storefront --namespace-wildcard \
+#          --scope reviews:read --scope reviews:write --scope media:write
+#
+# Upgrading: the image appears on four lines (migrate, app, dispatcher, cleanup); move them
+# together, then `docker compose up -d --wait` re-runs the migration first.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: octoreview
+      POSTGRES_USER: octoreview
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/docker/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U octoreview -d octoreview"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    restart: "no"
+    env_file: [.env]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+    restart: unless-stopped
+    env_file: [.env]
+    ports:
+      # Loopback only: front it with a TLS reverse proxy.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # The local backend's media (single host only); unused with OCTOREVIEW_STORAGE_BACKEND=s3.
+      - media:/var/lib/octoreview/media
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Delivers outbox events every minute and retries failed ones after their backoff. Never add
+  # --retry-failed here: it replays dead letters (docs/operations.md). `set -e` ends the loop on
+  # an unexpected failure, so the restart count shows it.
+  dispatcher:
+    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+    restart: unless-stopped
+    command:
+      ["sh", "-c", "set -e; while true; do python manage.py dispatch_outbox_events --limit 100; sleep 60; done"]
+    env_file: [.env]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Deletes abandoned uploads and removed or erased media every 15 minutes. A failed key exits 1;
+  # the loop keeps going and the cleanup_media.failed metric reports it.
+  cleanup:
+    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do python manage.py cleanup_media || true; sleep 900; done"]
+    env_file: [.env]
+    volumes:
+      - media:/var/lib/octoreview/media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  media:

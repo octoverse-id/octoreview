@@ -8,7 +8,11 @@ from octoreview.events.dispatch import dispatch_outbox_events
 
 
 class Command(BaseCommand):
-    help = "Deliver pending outbox events; --retry-failed also replays failed and dead letters."
+    help = (
+        "Deliver pending events and retry failed ones after their backoff. --retry-failed is "
+        "an operator replay: it also redelivers dead letters, ignoring the backoff; never "
+        "schedule it."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=100)

@@ -169,9 +169,21 @@ def _skip_locked(queryset):
 
 
 def _next_event(*, retry_failed: bool, exclude: set) -> OutboxEvent | None:
-    statuses = [OutboxEvent.Status.PENDING]
+    """The next deliverable event (docs/spec.md section 10).
+
+    A scheduled run delivers pending events and retries failed ones once their backoff has
+    elapsed (`available_at`); dead letters stay put. `--retry-failed` is the operator's replay:
+    it also takes dead letters and ignores the backoff, so it must never run on a schedule.
+    """
+
     if retry_failed:
-        statuses += [OutboxEvent.Status.FAILED, OutboxEvent.Status.DEAD_LETTER]
+        statuses = [
+            OutboxEvent.Status.PENDING,
+            OutboxEvent.Status.FAILED,
+            OutboxEvent.Status.DEAD_LETTER,
+        ]
+    else:
+        statuses = [OutboxEvent.Status.PENDING, OutboxEvent.Status.FAILED]
     queryset = OutboxEvent.objects.filter(status__in=statuses).exclude(id__in=exclude)
     if not retry_failed:
         queryset = queryset.filter(available_at__lte=timezone.now())
