@@ -123,6 +123,8 @@ def test_dispatch_publishes_and_marks_published():
 
 
 def test_failures_back_off_then_dead_letter(settings):
+    """A scheduled (plain) run retries a failed event once its backoff has elapsed."""
+
     settings.OUTBOX_MAX_ATTEMPTS = 2
     event = make_event()
     transport = RecordingTransport(fail=True)
@@ -130,10 +132,28 @@ def test_failures_back_off_then_dead_letter(settings):
     event.refresh_from_db()
     assert event.status == OutboxEvent.Status.FAILED
     assert event.available_at > timezone.now()
+
+    summary = dispatch.dispatch_outbox_events(transport=transport)
+    assert summary["failed"] + summary["dead_lettered"] == 0  # still inside its backoff
+
     OutboxEvent.objects.filter(id=event.id).update(available_at=timezone.now())
-    dispatch.dispatch_outbox_events(transport=transport, retry_failed=True)
+    dispatch.dispatch_outbox_events(transport=transport)
     event.refresh_from_db()
     assert event.status == OutboxEvent.Status.DEAD_LETTER
+
+
+def test_a_scheduled_run_delivers_a_retry_but_never_touches_dead_letters():
+    retry = make_event()
+    OutboxEvent.objects.filter(id=retry.id).update(
+        status=OutboxEvent.Status.FAILED, attempts=1, available_at=timezone.now()
+    )
+    dead = make_event()
+    OutboxEvent.objects.filter(id=dead.id).update(status=OutboxEvent.Status.DEAD_LETTER, attempts=5)
+    dispatch.dispatch_outbox_events(transport=RecordingTransport())
+    retry.refresh_from_db()
+    dead.refresh_from_db()
+    assert retry.status == OutboxEvent.Status.PUBLISHED
+    assert (dead.status, dead.attempts) == (OutboxEvent.Status.DEAD_LETTER, 5)
 
 
 def test_retry_failed_replays_a_dead_letter_once_per_run():

@@ -82,7 +82,7 @@ def test_the_scheduled_jobs_run_real_commands_and_never_overlap():
         assert args[2] in commands, args
         jobs[args[2]] = args[3:]
     assert jobs == {
-        "dispatch_outbox_events": ["--limit", "100", "--retry-failed"],
+        "dispatch_outbox_events": ["--limit", "100"],  # never --retry-failed on a schedule
         "cleanup_media": [],
         "prune_outbox_events": [],
         "recompute_ratings": ["--check"],

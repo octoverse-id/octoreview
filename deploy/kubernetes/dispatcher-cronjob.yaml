@@ -39,7 +39,8 @@ spec:
             - name: dispatcher
               image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
               # `args`, not `command`: the image entrypoint still runs `manage.py check` first.
-              args: ["python", "manage.py", "dispatch_outbox_events", "--limit", "100", "--retry-failed"]
+              # No --retry-failed: that is the operator's dead-letter replay (docs/operations.md).
+              args: ["python", "manage.py", "dispatch_outbox_events", "--limit", "100"]
               envFrom:
                 - configMapRef:
                     name: octoreview-config

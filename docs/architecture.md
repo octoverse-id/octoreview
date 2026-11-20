@@ -61,7 +61,7 @@ lands in one of these modules, check the sibling service in the same PR (AGENTS.
 | `service_auth/management/commands/*` | same | `--json`; unknown scope exits 2 listing valid scopes |
 | `audit/models.py`, `audit/services.py` | same | `aggregate_type`/`aggregate_id`; no tag columns; a missing audit context is a bug, not a skipped row |
 | `events/models.py`, `events/services.py` | same | `resource_type`/`resource_id`; no actor column; payloads refuse personal fields |
-| `events/dispatch.py` | `events/dispatch.py` | envelope-only logging; timestamped webhook signature; dead-letter replay; delivered `author.erased` deleted; no namespace kill-switch |
+| `events/dispatch.py` | `events/dispatch.py` | envelope-only logging; timestamped webhook signature; scheduled runs retry failed events after their backoff, and `--retry-failed` is an operator replay that also takes dead letters; delivered `author.erased` deleted; no namespace kill-switch |
 | `Dockerfile` | `Dockerfile` | Python 3.12 (octonomy: 3.14); `uv sync --extra s3`; a writable `/var/lib/octoreview/media` for uid 1001; no `collectstatic` (the server renders JSON only); a `.dockerignore` |
 | `docker-entrypoint.sh` | `docker-entrypoint.sh` | comments only |
 | `gunicorn.conf.py` | `gunicorn.conf.py` | `gthread` with 8 threads by default (octonomy: `sync`, 1; spec section 7.4); formatter from `octoreview.core.logging` |

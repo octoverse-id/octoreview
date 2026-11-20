@@ -2,8 +2,9 @@
 .git
 .github
 .venv
-.env
-.env.*
+# At any depth: deploy/docker/.env holds production secrets on a host that also builds.
+**/.env
+**/.env.*
 .octoreview-dev.env
 db.sqlite3
 var/

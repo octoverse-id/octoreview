@@ -811,8 +811,10 @@ namespace_type, namespace_id, resource_type, resource_id, request_id, data}`. Pa
   signature includes a timestamp (gate d22a).
 
 **Dispatcher** (`manage.py dispatch_outbox_events`, ported from octonomy):
-- Claims events, retries with backoff, and moves exhausted events to `dead_letter`.
-- `--retry-failed` replays failed and dead-letter events.
+- Claims events, retries with backoff, and moves exhausted events to `dead_letter`. A scheduled
+  run delivers pending events and failed ones whose backoff has elapsed.
+- `--retry-failed` is an operator replay of failed and dead-letter events, ignoring the backoff;
+  it is never scheduled (the manifests run the plain command).
 - Dead letters raise an alert (the `outbox.dead_letter_count` metric).
 
 **Pruning** (`manage.py prune_outbox_events`):
