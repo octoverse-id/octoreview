@@ -96,9 +96,9 @@ with the same image and environment as the server:
 
 | Secret | How |
 | --- | --- |
-| `OCTOREVIEW_MEDIA_TOKEN_SECRET` (local backend) | Move the current value to `OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS`, set a new one, deploy; drop the previous value after the longest URL TTL has passed |
+| `OCTOREVIEW_MEDIA_TOKEN_SECRET` (local backend) | Move the current value to `OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS`, set a new one, deploy. Tokens name the secret that signed them, so URLs issued before the rotation keep working; drop the previous value once the longest URL lifetime (`OCTOREVIEW_UPLOAD_URL_TTL_SECONDS`, `OCTOREVIEW_MEDIA_URL_TTL_SECONDS`) has passed |
 | Service keys | `create_service_token` a new key, switch the caller, then `revoke_service_token` the old prefix |
 | `DJANGO_SECRET_KEY` | Replace and deploy; it signs nothing octoreview's clients keep |
-| `OCTOREVIEW_SERVICE_TOKEN_PEPPER` | Rotating it invalidates every service key; issue new keys first |
+| `OCTOREVIEW_SERVICE_TOKEN_PEPPER` | A cutover with downtime: stored key hashes depend on the pepper, so every key, old or new, stops working when it changes, and keys created before the switch are hashed with the old pepper. Create each caller's replacement key with the new pepper in that command's environment (`OCTOREVIEW_SERVICE_TOKEN_PEPPER=<new> python manage.py create_service_token ...`), then deploy the new pepper and switch the callers together. Rotate it only after a suspected leak |
 | `OCTOREVIEW_ERASURE_HMAC_KEY` | Never rotate it: erased authors are recorded by its HMAC |
 | S3 credentials | Use a role; botocore refreshes it. Rotate static keys by deploying the new pair |

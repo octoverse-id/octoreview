@@ -2,8 +2,9 @@
 
 A token binds purpose, media id, storage key, declared size or audience, expiry and key id. It
 is `<kid>.<payload>.<signature>`: the signature is an HMAC over a purpose-specific prefix, so an
-upload token can never be used as a download token. The previous secret (`kid = p`) is accepted
-for verification during rotation.
+upload token can never be used as a download token. The key id is a fingerprint of the secret
+that signed the token, so after a rotation (the old value moved to
+OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS) tokens issued before it still verify until they expire.
 """
 
 from __future__ import annotations
@@ -48,14 +49,16 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
+def _kid(secret: str) -> str:
+    """A short public fingerprint naming the secret, never the secret itself."""
+
+    return _b64(hashlib.sha256(f"octoreview.media.kid|{secret}".encode()).digest())[:11]
+
+
 def _secrets() -> dict[str, str]:
     # An empty secret would make every token forgeable; it is skipped, never used for verifying.
-    secrets = {}
-    if settings.MEDIA_TOKEN_SECRET:
-        secrets["c"] = settings.MEDIA_TOKEN_SECRET
-    if settings.MEDIA_TOKEN_SECRET_PREVIOUS:
-        secrets["p"] = settings.MEDIA_TOKEN_SECRET_PREVIOUS
-    return secrets
+    configured = (settings.MEDIA_TOKEN_SECRET, settings.MEDIA_TOKEN_SECRET_PREVIOUS)
+    return {_kid(secret): secret for secret in configured if secret}
 
 
 def _sign(secret: str, purpose: str, payload: str) -> str:
@@ -67,7 +70,8 @@ def _issue(purpose: str, claims: dict) -> str:
     if not settings.MEDIA_TOKEN_SECRET:
         raise RuntimeError("OCTOREVIEW_MEDIA_TOKEN_SECRET is empty; local media tokens need it.")
     payload = _b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode())
-    return f"c.{payload}.{_sign(settings.MEDIA_TOKEN_SECRET, purpose, payload)}"
+    secret = settings.MEDIA_TOKEN_SECRET
+    return f"{_kid(secret)}.{payload}.{_sign(secret, purpose, payload)}"
 
 
 def upload_token(*, media_id, key: str, size_bytes: int, expires_at: datetime) -> str:

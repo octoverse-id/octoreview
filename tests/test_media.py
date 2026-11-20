@@ -479,19 +479,27 @@ def test_download_token_errors(ready_media):
     )
 
 
-def test_token_signed_with_the_previous_secret_still_verifies(settings):
+def test_tokens_issued_before_a_rotation_verify_until_the_previous_secret_goes(settings):
+    """docs/operations.md: move the secret to ..._PREVIOUS, set a new one; old URLs keep working."""
+
     now = timezone.now()
     token = tokens.download_token(
         media_id="m", key="k", audience="public", expires_at=now + timedelta(minutes=1)
     )
     settings.MEDIA_TOKEN_SECRET_PREVIOUS = settings.MEDIA_TOKEN_SECRET
     settings.MEDIA_TOKEN_SECRET = "rotated-secret"
-    rotated = token.replace("c.", "p.", 1)
-    assert tokens.verify(rotated, tokens.DOWNLOAD, now=now).key == "k"
+    assert tokens.verify(token, tokens.DOWNLOAD, now=now).key == "k"
+    fresh = tokens.download_token(
+        media_id="m", key="k", audience="public", expires_at=now + timedelta(minutes=1)
+    )
+    assert fresh.split(".")[0] != token.split(".")[0]  # the key id names the new secret
+    assert tokens.verify(fresh, tokens.DOWNLOAD, now=now).key == "k"
+    with pytest.raises(tokens.TokenInvalid):
+        tokens.verify(token, tokens.UPLOAD, now=now)
+    settings.MEDIA_TOKEN_SECRET_PREVIOUS = ""
     with pytest.raises(tokens.TokenInvalid):
         tokens.verify(token, tokens.DOWNLOAD, now=now)
-    with pytest.raises(tokens.TokenInvalid):
-        tokens.verify(rotated, tokens.UPLOAD, now=now)
+    assert tokens.verify(fresh, tokens.DOWNLOAD, now=now).key == "k"
 
 
 def test_public_url_is_revoked_when_the_review_is_hidden(api_client, headers, admin, reader):

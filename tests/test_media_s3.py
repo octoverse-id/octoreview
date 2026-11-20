@@ -389,7 +389,7 @@ def test_token_paths_answer_404_on_a_cloud_backend(offline_s3, api_client):
 def test_an_empty_token_secret_verifies_nothing(settings):
     settings.MEDIA_TOKEN_SECRET = ""
     payload = tokens._b64(b'{"e":4102444800,"k":"k","m":"m","s":1}')
-    forged = f"c.{payload}.{tokens._sign('', tokens.UPLOAD, payload)}"
+    forged = f"{tokens._kid('')}.{payload}.{tokens._sign('', tokens.UPLOAD, payload)}"
     with pytest.raises(tokens.TokenInvalid):
         tokens.verify(forged, tokens.UPLOAD, now=timezone.now())
     with pytest.raises(RuntimeError):
