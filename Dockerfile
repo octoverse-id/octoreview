@@ -5,7 +5,7 @@
 # The base image is pinned by digest on a literal `FROM`, and both real stages descend from this
 # `base` stage, so the pin lives in one place. Keep it out of an ARG: Dependabot's docker
 # ecosystem does not resolve `FROM ${VAR}` and would never bump it (octonomy #132).
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS base
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS base
 
 # --- Builder -----------------------------------------------------------------------------------
 # Install only the locked runtime dependencies, plus every storage extra (spec section 7.1: the
