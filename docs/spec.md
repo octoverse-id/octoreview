@@ -984,7 +984,8 @@ and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
 
 ## 16. Observability and operations
 
-- **Metrics** (emitted with octonomy's `emit_metric`):
+- **Metrics** (emitted with octonomy's `emit_metric`; [`operations.md`](operations.md) lists each
+  with its fields, the alerts and the scheduled jobs):
   - `review.created|published|rejected`;
   - `media.intent|ready|rejected`, with reason and backend;
   - `storage.call`, with backend, operation, latency and outcome;

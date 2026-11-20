@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Domain metrics as JSON log lines, emitted after commit and free of personal data:
+  `review.created|published|rejected`, `media.intent|ready|rejected`, `quota.rejected`,
+  `storage.call` (timed once in the storage facade, with an outcome), `cleanup_media.deleted|failed`,
+  `erase.completed` and `outbox.lag_seconds`. `docs/operations.md` lists every metric, the
+  alerts, the scheduled jobs, failure playbooks, erasure copies and secret rotation.
 - Image publishing (`.github/workflows/publish-image.yml`, copied from octonomy): every green CI
   run on `main` publishes `:edge` and `:sha-<commit>`; a `vX.Y.Z` or `vX.Y.Z-rc.N` tag on a
   release merge publishes a multi-arch, smoke-tested, attested image, and candidates move no

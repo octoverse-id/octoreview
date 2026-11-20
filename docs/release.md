@@ -45,9 +45,11 @@ it never runs for a pull request's CI, a fork's or another branch's.
 
 ## The first publish
 
-GHCR creates a new package as **private**, even for a public repository. The first `edge` run
-creates `ghcr.io/octoverse-id/octoreview` and then fails its anonymous pull check. An org admin
-makes the package public (package settings, "Change visibility") and re-runs the job.
+The first `edge` run (2026-11-19, after #24) created `ghcr.io/octoverse-id/octoreview` linked to
+this public repository, and it was publicly pullable at once. If a package is ever created
+private (GHCR's default for packages not linked to a public repository), the anonymous pull
+check fails; an org admin makes the package public (package settings, "Change visibility") and
+re-runs the job.
 
 ## Who can publish
 

@@ -6,8 +6,10 @@ the adapters in `octoreview.media.storage` (an import-linter contract enforces i
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
+from octoreview.core import metrics
 from octoreview.media.storage import (
     MEDIA_PREFIX,
     STAGING_PREFIX,
@@ -54,6 +56,43 @@ def backend_name() -> str:
     return get_backend().name
 
 
+def _timed(operation: str, func, *args, **kwargs):
+    """Run one storage protocol call and emit `storage.call` (docs/operations.md).
+
+    `error` is the outcome the storage error-rate alert counts; a missing object, a changed
+    upload or a taken final key are expected answers, not errors. Read-path URL signing is not
+    timed: a review list signs one URL per media item and would flood the log.
+    """
+
+    started = time.perf_counter()
+    outcome = "ok"
+    try:
+        result = func(*args, **kwargs)
+        if result is None and operation == "stat":
+            outcome = "missing"
+        return result
+    except PreconditionFailed:
+        outcome = "precondition_failed"
+        raise
+    except FinalExists:
+        outcome = "final_exists"
+        raise
+    except CredentialsExpiring:
+        outcome = "credentials_expiring"
+        raise
+    except BaseException:
+        outcome = "error"
+        raise
+    finally:
+        metrics.emit_metric(
+            metrics.STORAGE_CALL,
+            backend=backend_name(),
+            operation=operation,
+            latency_ms=round((time.perf_counter() - started) * 1000, 1),
+            outcome=outcome,
+        )
+
+
 def serves_token_urls() -> bool:
     """Whether `/media-uploads/{token}` and `/media-files/{token}` are live (local backend only)."""
 
@@ -65,7 +104,9 @@ def url_expiry(requested: datetime) -> datetime:
 
 
 def create_upload(*, key, content_type, size_bytes, expires_at, media_id) -> UploadTarget:
-    return get_backend().create_upload(
+    return _timed(
+        "sign_upload",
+        get_backend().create_upload,
         key=key,
         content_type=content_type,
         size_bytes=size_bytes,
@@ -75,19 +116,26 @@ def create_upload(*, key, content_type, size_bytes, expires_at, media_id) -> Upl
 
 
 def stat(key: str) -> ObjectInfo | None:
-    return get_backend().stat(key)
+    return _timed("stat", get_backend().stat, key)
 
 
 def read_head(key: str, length: int, *, if_version: str) -> bytes:
-    return get_backend().read_head(key, length, if_version=if_version)
+    return _timed("read_head", get_backend().read_head, key, length, if_version=if_version)
 
 
 def finalize(staging: str, final: str, *, content_type: str, if_version: str) -> None:
-    get_backend().finalize(staging, final, content_type=content_type, if_version=if_version)
+    _timed(
+        "finalize",
+        get_backend().finalize,
+        staging,
+        final,
+        content_type=content_type,
+        if_version=if_version,
+    )
 
 
 def delete(key: str) -> None:
-    get_backend().delete(key)
+    _timed("delete", get_backend().delete, key)
 
 
 def download_url(key, *, media_id, audience: str, expires_at: datetime) -> str:
@@ -101,11 +149,11 @@ def free_bytes() -> int | None:
 
 
 def sweep_staging(older_than: datetime) -> int:
-    return get_backend().sweep_staging(older_than)
+    return _timed("sweep_staging", get_backend().sweep_staging, older_than)
 
 
 def expiration_rules() -> list | None:
-    return get_backend().expiration_rules()
+    return _timed("lifecycle", get_backend().expiration_rules)
 
 
 def write_stream(key: str, chunks, *, limit: int) -> int:

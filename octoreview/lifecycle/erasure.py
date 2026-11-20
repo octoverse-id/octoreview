@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from octoreview.audit import services as audit
 from octoreview.audit.models import AuditLog
+from octoreview.core import metrics
 from octoreview.core.audit_context import AuditContext
 from octoreview.entities.ratings import apply_delta
 from octoreview.events import services as events
@@ -139,6 +140,14 @@ def erase_author(
     )
     if remaining == 0:
         with transaction.atomic():
+            # Counts only: the author id is exactly what erasure removes.
+            metrics.emit_on_commit(
+                metrics.ERASE_COMPLETED,
+                tenant_id=tenant_id,
+                application_id=application_id,
+                reviews_redacted=len(batch),
+                pending_media_deletes=pending_media_deletes,
+            )
             audit.record(
                 tenant_id=tenant_id,
                 application_id=application_id,
