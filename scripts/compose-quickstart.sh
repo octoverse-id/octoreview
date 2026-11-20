@@ -30,6 +30,8 @@ run() {
   "$@"
   docker compose cp octoreview:/var/lib/octoreview/dev/.octoreview-dev.env "$env_file" >/dev/null 2>&1
   scripts/quickstart.sh "$env_file"
+  # The deployment smoke (docs/operations.md) against the same stack, cleaning up after itself.
+  OCTOREVIEW_SMOKE_APPLICATION_ID=storefront scripts/smoke-upload.sh "$env_file"
   local took=$(($(date +%s) - started))
   echo "compose-quickstart: $name took ${took}s"
   echo "| $name | ${took} s |" >>"$summary"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -60,3 +62,15 @@ def test_the_repository_today_names_its_stamps(run_script):
     result = run_script("version-check.sh")
     assert result.returncode in (0, 1), result.output
     assert result.stdout.startswith("pyproject=")
+
+
+@pytest.mark.parametrize(("tag", "passes"), [("1.0.0-rc.1", True), ("1.0.0-rc.0", False)])
+def test_deploy_image_tags_must_name_the_version(run_script, tree, tag, passes):
+    root = tree()
+    deploy = Path(root) / "deploy" / "kubernetes"
+    deploy.mkdir(parents=True)
+    (deploy / "deployment.yaml").write_text(f"image: ghcr.io/octoverse-id/octoreview:{tag}\n")
+    result = run_script("version-check.sh", root)
+    assert (result.returncode == 0) is passes, result.output
+    if not passes:
+        assert "deploy/ references ghcr.io/octoverse-id/octoreview:1.0.0-rc.0" in result.stdout

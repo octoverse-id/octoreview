@@ -1,0 +1,27 @@
+# Non-secret settings (.env.example explains each). Kubernetes runs several replicas, so it needs a
+# cloud storage backend: the local backend serves files from one pod's disk (docs/storage.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: octoreview-config
+  namespace: octoreview
+  labels:
+    app.kubernetes.io/name: octoreview
+data:
+  DJANGO_DEBUG: "false"
+  # The probes send Host: 127.0.0.1, so it stays in the list.
+  DJANGO_ALLOWED_HOSTS: "reviews.example.com,127.0.0.1"
+  OCTOREVIEW_STORAGE_BACKEND: "s3"
+  OCTOREVIEW_STORAGE_LOCATION_ID: "aws-ap-southeast-3-reviews"
+  OCTOREVIEW_STORAGE_S3_BUCKET: "reviews-media"
+  OCTOREVIEW_STORAGE_S3_REGION: "ap-southeast-3"
+  # Browser origins that upload and play media straight from the bucket (bucket CORS rule too).
+  OCTOREVIEW_MEDIA_CORS_ORIGINS: "https://shop.example.com"
+  # Optional public-CDN mode for storefront images (docs/storage.md "Read URLs").
+  OCTOREVIEW_MEDIA_PUBLIC_BASE_URL: ""
+  OCTOREVIEW_OUTBOX_TRANSPORT: "webhook"
+  OCTOREVIEW_WEBHOOK_URL: "https://hooks.example.com/octoreview"
+  OCTOREVIEW_ADMIN_ENABLED: "false"
+  OCTOREVIEW_LOG_LEVEL: "INFO"
+  WEB_CONCURRENCY: "2"
+  GUNICORN_THREADS: "8"

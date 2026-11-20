@@ -110,5 +110,44 @@ like) are scrubbed from every message.
   `/api/v1/media-uploads/<token>` and `/api/v1/media-files/<token>` in proxy and CDN logs, as the
   server does in its own.
 
-Kubernetes manifests and CronJobs (`cleanup_media`, the outbox dispatcher, the nightly
-`recompute_ratings --check`) arrive with `deploy/kubernetes`.
+## Kubernetes
+
+`deploy/kubernetes/` holds plain manifests for the `octoreview` namespace. Kubernetes runs
+several replicas, so it needs the `s3` backend ([`storage.md`](storage.md)).
+
+1. Edit `configmap.yaml` (hosts, bucket, region, CORS origins, webhook URL) and create the
+   Secret from `secret.example.yaml`'s keys, through your secret manager or
+   `kubectl -n octoreview create secret generic octoreview-secrets --from-env-file=secrets.env`.
+2. On EKS, point `serviceaccount.yaml`'s `eks.amazonaws.com/role-arn` at a role with the IAM
+   policy in [`storage.md`](storage.md) (IRSA). Elsewhere, use your platform's workload identity,
+   or put `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in the Secret.
+3. Apply in order:
+
+   ```sh
+   kubectl apply -f namespace.yaml -f serviceaccount.yaml -f configmap.yaml
+   kubectl -n octoreview apply -f migrate-job.yaml
+   kubectl -n octoreview wait --for=condition=complete job/octoreview-migrate --timeout=300s
+   kubectl -n octoreview apply -f deployment.yaml -f service.yaml -f ingress.yaml
+   kubectl -n octoreview apply -f dispatcher-cronjob.yaml -f cleanup-media-cronjob.yaml \
+     -f prune-outbox-cronjob.yaml -f recompute-check-cronjob.yaml
+   ```
+
+Every pod runs as uid 1001 with a read-only root filesystem, no Kubernetes API token and the
+image's fail-closed entrypoint. The probes call `/api/v1/health/*` with `Host: 127.0.0.1`, which
+the ConfigMap's `DJANGO_ALLOWED_HOSTS` keeps. The Ingress (ingress-nginx annotations) allows
+900-second reads for `complete`.
+
+**Upgrading.** Every manifest names the same image tag (`make version-check` enforces it at
+release). Delete and re-apply the migrate Job with the new tag and wait for it, then apply the
+Deployment and the CronJobs.
+
+## Single host with Docker
+
+`deploy/docker/compose.yaml` runs the published image on one host. It runs PostgreSQL, a one-shot
+`migrate`, the API on `127.0.0.1:8000` behind your TLS proxy, the outbox dispatcher (every
+minute) and `cleanup_media` (every 15 minutes). Copy `deploy/.env.production.example` to
+`deploy/docker/.env`, fill it in, and start it from that directory with `docker compose up -d
+--wait`; the file's header lists the steps. The local backend works here (single host), on the
+`media` volume.
+
+After either deployment, run the smoke test ([`operations.md`](operations.md) "Smoke test").

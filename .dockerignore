@@ -9,8 +9,8 @@ db.sqlite3
 var/
 staticfiles/
 code-review/
-.omc/
-.gstack/
+**/.omc/
+**/.gstack/
 **/__pycache__
 *.py[cod]
 .coverage

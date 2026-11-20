@@ -38,6 +38,24 @@ before uploading); `precondition_failed` (the upload changed during `complete`);
 (an earlier attempt already published the bytes); `credentials_expiring`; and `error`. Only
 `error` is a fault. The others are answers the protocol expects.
 
+## Smoke test
+
+`scripts/smoke-upload.sh` checks a deployed instance end to end: health, create a review,
+upload a photo through intent, PUT and complete, then fetch its URL and compare the bytes. It
+deletes the media item and the review it created, names the failed step and its request id, and
+never prints the key. Give it a key for a dedicated smoke application (scopes `reviews:read`,
+`reviews:write`, `media:write`):
+
+```sh
+OCTOREVIEW_BASE_URL=https://reviews.example.com OCTOREVIEW_API_KEY=... \
+OCTOREVIEW_TENANT_ID=mbizmarket OCTOREVIEW_SMOKE_APPLICATION_ID=smoke scripts/smoke-upload.sh
+```
+
+Run it after each deployment and from your monitoring on a schedule. A failed `upload_put` or
+`media_fetch` points at the bucket (CORS, credentials, a presign host the network cannot reach);
+`check_storage` from a pod narrows it down. The CI `compose-quickstart` job runs it against the
+compose stack on both backends.
+
 ## Alerts
 
 | Alert | Condition | First look |
@@ -49,7 +67,8 @@ before uploading); `precondition_failed` (the upload changed during `complete`);
 
 ## Scheduled jobs
 
-Run each as a Kubernetes CronJob with `concurrencyPolicy: Forbid` (or cron on a single host),
+`deploy/kubernetes/` ships each as a CronJob with `concurrencyPolicy: Forbid`, and
+`deploy/docker/compose.yaml` runs the dispatcher and cleanup as loops. Elsewhere, schedule them
 with the same image and environment as the server:
 
 | Command | Schedule | Why |

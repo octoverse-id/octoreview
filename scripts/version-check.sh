@@ -6,6 +6,7 @@
 #   docs/openapi.yaml info.version          (the contract the SDKs vendor)
 #   config/settings.py SPECTACULAR_SETTINGS "VERSION"
 #   CHANGELOG.md     a "## [1.0.0-rc.1]" heading
+#   deploy/          every ghcr.io/octoverse-id/octoreview image tag
 #
 # Usage: scripts/version-check.sh [REPO_DIR]   Exit codes: 0 agree | 1 disagree | 2 unreadable
 set -euo pipefail
@@ -27,5 +28,10 @@ status=0
 [ "$openapi" = "$semver" ] || { echo "FAIL  docs/openapi.yaml info.version is $openapi, not $semver"; status=1; }
 [ "$settings" = "$semver" ] || { echo "FAIL  config/settings.py VERSION is $settings, not $semver"; status=1; }
 grep -qF "## [$semver]" CHANGELOG.md || { echo "FAIL  CHANGELOG.md has no \"## [$semver]\" heading"; status=1; }
+if [ -d deploy ]; then
+  while IFS= read -r ref; do
+    [ "${ref##*:}" = "$semver" ] || { echo "FAIL  deploy/ references $ref, not $semver"; status=1; }
+  done < <(grep -rhoE 'ghcr\.io/octoverse-id/octoreview:[^"[:space:]]+' deploy | sort -u)
+fi
 [ "$status" = 0 ] && echo "version-check OK ($semver)"
 exit "$status"

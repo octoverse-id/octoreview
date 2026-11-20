@@ -1,0 +1,7 @@
+# Apply order and the rest of the setup: docs/deployment.md "Kubernetes".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: octoreview
+  labels:
+    app.kubernetes.io/name: octoreview

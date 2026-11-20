@@ -1007,7 +1007,7 @@ and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
   (`X-Amz-*`, `sig`, `X-Goog-*`) from every message and exception text, and unmatched routes log
   `"<unresolved>"`. The image ships with gunicorn's access log off. `docs/operations.md` tells
   operators to redact the token paths in proxy and CDN logs.
-- **Deployment.** `deploy/docker` and `deploy/kubernetes` (with CronJobs for `cleanup_media`, the
+- **Deployment** ([`deployment.md`](deployment.md)). `deploy/docker` and `deploy/kubernetes` (with CronJobs for `cleanup_media`, the
   outbox dispatcher and the nightly check). Kubernetes requires a cloud storage backend. Rate
   limiting is out of scope: put an API gateway or ingress limit in front (TODOS DEP-3).
 - **Smoke.** `scripts/smoke-upload.sh` runs health, create review, intent, PUT, complete and media
