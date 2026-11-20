@@ -92,13 +92,34 @@ with the same image and environment as the server:
   - **Logs.** Request logs hold no review content, but your pipeline's retention still applies.
   - **Bucket versioning.** Keep it off, or expire noncurrent versions ([`storage.md`](storage.md)).
 
+## Admin console
+
+An optional operator console at `/admin/` (django-unfold), for looking things up and moderating
+by hand. The REST API stays the product surface.
+
+- **Turning it on.** Set `OCTOREVIEW_ADMIN_ENABLED=true` (off in the image, on in compose). When
+  off, `/admin/` does not exist. Create a login with
+  `python manage.py createsuperuser` (in compose:
+  `docker compose exec octoreview python manage.py createsuperuser`).
+- **Who gets in.** Active superusers only; a staff account without superuser cannot enter.
+- **What it does.**
+  - Every model is read-only: service keys (the key hash never shows), grants, entities,
+    application settings, reviews, revisions, media, audit logs and outbox events.
+  - Moderation actions call the same lifecycle services as the API, recorded with the actor
+    `admin:<username>`. Reviews can be rejected, hidden or removed. Publishing a review or
+    approving a media item first shows a confirmation page with the content (and a link to the
+    file); a review that changed after that page rendered is refused, and you reload it.
+- **In production.** Serve it over HTTPS to trusted operators only (a VPN or an IP allowlist on
+  `/admin/`). `manage.py check --deploy` warns (`octoreview.W001`) while it is on with DEBUG off.
+  Its static files are collected into the image and served by the app.
+
 ## Rotating secrets
 
 | Secret | How |
 | --- | --- |
 | `OCTOREVIEW_MEDIA_TOKEN_SECRET` (local backend) | Move the current value to `OCTOREVIEW_MEDIA_TOKEN_SECRET_PREVIOUS`, set a new one, deploy. Tokens name the secret that signed them, so URLs issued before the rotation keep working; drop the previous value once the longest URL lifetime (`OCTOREVIEW_UPLOAD_URL_TTL_SECONDS`, `OCTOREVIEW_MEDIA_URL_TTL_SECONDS`) has passed |
 | Service keys | `create_service_token` a new key, switch the caller, then `revoke_service_token` the old prefix |
-| `DJANGO_SECRET_KEY` | Replace and deploy; it signs nothing octoreview's clients keep |
+| `DJANGO_SECRET_KEY` | Replace and deploy; it signs only admin console sessions, so console users log in again |
 | `OCTOREVIEW_SERVICE_TOKEN_PEPPER` | A cutover with downtime: stored key hashes depend on the pepper, so every key, old or new, stops working when it changes, and keys created before the switch are hashed with the old pepper. Create each caller's replacement key with the new pepper in that command's environment (`OCTOREVIEW_SERVICE_TOKEN_PEPPER=<new> python manage.py create_service_token ...`), then deploy the new pepper and switch the callers together. Rotate it only after a suspected leak |
 | `OCTOREVIEW_ERASURE_HMAC_KEY` | Never rotate it: erased authors are recorded by its HMAC |
 | S3 credentials | Use a role; botocore refreshes it. Rotate static keys by deploying the new pair |

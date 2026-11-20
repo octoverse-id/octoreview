@@ -54,6 +54,13 @@ COPY --from=builder /opt/venv /opt/venv
 # Source stays root-owned and read-only to the app user (.dockerignore keeps local state out).
 COPY . .
 
+# The admin console's bundled static files, served by WhiteNoise (docs/operations.md "Admin
+# console"). Settings need a location id and the local backend's paths to load at all; these
+# values exist only for this build step, and DEBUG lets the development secret defaults apply.
+RUN DJANGO_DEBUG=true OCTOREVIEW_STORAGE_LOCATION_ID=build \
+    OCTOREVIEW_PUBLIC_BASE_URL=http://build.invalid OCTOREVIEW_MEDIA_ROOT=/tmp/build-media \
+    python manage.py collectstatic --noinput >/dev/null
+
 USER app
 
 EXPOSE 8000

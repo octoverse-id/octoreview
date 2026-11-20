@@ -10,7 +10,7 @@ this with import-linter (`[tool.importlinter]` in `pyproject.toml`).
 | Layer | Module | Owns |
 | --- | --- | --- |
 | top | `octoreview.openapi` | `make openapi-check`: compares `docs/openapi.yaml`, `errors.md`, `events.md` and `sdk-surface.yaml` with the URLconf and the error and event registries |
-| | `octoreview.api` | Views, serializers and URL routes; composes the domain modules |
+| | `octoreview.api`, `octoreview.console` | Presentation, independent of each other. `api`: views, serializers and URL routes. `console`: the opt-in admin's registrations, moderation actions through the lifecycle services, and its system check |
 | | `octoreview.lifecycle` | Transition tables, removal cascades, erasure (release line 1) |
 | | `octoreview.media` | Media rows, upload intents, completion, signed tokens; `media.storage` holds the adapters (`local`, `s3`) and nothing else imports it; boto3 is imported only by `media.storage.s3` |
 | | `octoreview.reviews` | Reviews and revisions (release line 1) |
@@ -19,7 +19,9 @@ this with import-linter (`[tool.importlinter]` in `pyproject.toml`).
 | | `octoreview.audit`, `octoreview.events` | Audit log; transactional outbox, dispatcher and transports |
 | bottom | `octoreview.core` | Request ids, error envelope and code registry, pagination, namespace parsing, grant predicates, JSON logging, metrics |
 
-`config/` holds settings (`settings.py`, `settings_pytest.py`) and the root URLconf.
+`config/` holds settings (`settings.py`, `settings_pytest.py`), the root URLconf (which mounts
+`/admin/` only when `OCTOREVIEW_ADMIN_ENABLED`), and the admin site wiring (`admin.py`,
+`adminsite.py`, `auth_admin.py`).
 
 ## Request path
 
@@ -65,4 +67,9 @@ lands in one of these modules, check the sibling service in the same PR (AGENTS.
 | `gunicorn.conf.py` | `gunicorn.conf.py` | `gthread` with 8 threads by default (octonomy: `sync`, 1; spec section 7.4); formatter from `octoreview.core.logging` |
 | `.github/workflows/publish-image.yml`, `.github/actions/build-publish/action.yml` | same | `vX.Y.Z-rc.N` tags publish (only their own tag); the version is read from PEP 440; `docker-smoke` on amd64 and octoreview's settings on arm64; `:edge` also gets `:sha-<commit>`; version stamps and the release-merge check skip dry runs; a dry run tolerates no release tags yet |
 | `scripts/check-release-merge.sh`, `scripts/check-tag-unpublished.sh`, `scripts/resolve-latest-tag.sh` and `tests/tooling/` | same | candidates accepted; PEP 440 `rcN` read as semver `-rc.N`; a candidate resolves to its own tag only; rc tests replace octonomy's "no prerelease rules" test |
+| `config/admin.py`, `config/adminsite.py`, `config/auth_admin.py` | same | renamed; the site drops octonomy's Swagger link (octoreview has no docs UI) |
+| `console/base.py` | `core/admin_base.py` | `ReadOnlyModelAdmin` and `pretty_json` kept; a `ModerationModelAdmin` that runs one lifecycle service per row replaces the service-backed form admin |
+| `console/admin.py` (service clients, grants, audit, outbox) | `service_auth/admin.py`, `audit/admin.py`, `events/admin.py` | octoreview's audit and outbox columns; the same safe-field allowlist for service clients |
+| `console/checks.py` (`octoreview.W001`) | `core/checks.py` (`octonomy.W001`) | wording |
+| `tests/console/conftest.py` | `tests/admin/conftest.py` | `console` and `root_client` fixtures |
 | `ci.yml` job `docker` | `ci.yml` job `docker` | the smoke steps live in `scripts/docker-smoke.sh` (`make docker-smoke`) and add non-root, no-dev-tools, s3-extra, fail-closed, ready-after-migrate, gthread and all-JSON-log checks |

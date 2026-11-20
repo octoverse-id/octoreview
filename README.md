@@ -19,6 +19,9 @@ make dev-env     # writes .octoreview-dev.env: base URL, a demo key, tenant and 
 make quickstart  # creates a review with a photo and prints its id, the rating and the photo URL
 ```
 
+The stack also serves the operator console at http://localhost:8000/admin/; create a login with
+`docker compose exec octoreview python manage.py createsuperuser`.
+
 `make up-s3` runs the same stack with media on an S3 emulator (RustFS on port 9000), the way a
 cloud deployment stores them. `make down` stops the stack; `docker compose down -v` also drops its
 data. When ports 8000 or 9000 are taken, set `OCTOREVIEW_PORT` or `OCTOREVIEW_S3_PORT`.

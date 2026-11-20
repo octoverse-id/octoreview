@@ -49,6 +49,10 @@ release, before the new pods take traffic (a Kubernetes Job or init container):
 docker run --rm <same environment> octoreview:local python manage.py migrate --noinput
 ```
 
+**The admin console.** Off by default; `OCTOREVIEW_ADMIN_ENABLED=true` mounts it at `/admin/`
+for superusers ([`operations.md`](operations.md) "Admin console"). Its static files are collected
+at build time and served by the app (WhiteNoise), so nothing else needs to serve `/static/`.
+
 **Health.** `GET /api/v1/health/live` answers while the process serves.
 `GET /api/v1/health/ready` also checks the database; it never calls storage, so a storage blip
 does not take every pod out of rotation.
