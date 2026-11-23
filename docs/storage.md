@@ -184,7 +184,7 @@ object holds when the copy runs, not the validated version. `check_storage` fail
 
 | Store | Status | Evidence |
 | --- | --- | --- |
-| AWS S3 | supported | documented behavior; the release smoke run (`spec.md` section 19) uses a real bucket |
+| AWS S3 | beta | documented behavior, exercised in CI through S3-compatible emulators only; becomes supported when a customer's smoke run on its own bucket passes (the Mbizmarket integration; `spec.md` section 19) |
 | RustFS 1.0.6 | CI emulator | every check below, on every pull request |
 | MinIO (Chainguard build, 2026-11-19) | protocol checks pass | spike below; no per-bucket CORS API (MinIO configures CORS server-wide) |
 | versitygw | protocol checks pass | spike below; no lifecycle API, so staging needs another cleanup |
