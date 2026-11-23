@@ -8,8 +8,8 @@ configurable, and media bytes live in a configurable storage backend.
 
 This repository was bootstrapped with governance files and a CI skeleton. The approved plan
 (octoreview workspace `octoreview-plan.md`, reviewed with /autoplan on 2026-11-18) drives the
-work. Release line 1 targets the first consumer, Mbizmarket (Go, PHP and JavaScript stack, media
-on AWS S3 or an S3-compatible store).
+work. Release line 1 ships the server with the `local` and `s3` (AWS S3 and S3-compatible)
+storage backends, plus the Go, PHP and JavaScript SDKs.
 
 [`docs/spec.md`](docs/spec.md) is the spec of record: domain model, state machines, API, upload
 protocol, events, errors, configuration and CI rules, plus a contradiction table for every value

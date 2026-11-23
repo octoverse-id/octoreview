@@ -48,7 +48,7 @@ never prints the key. Give it a key for a dedicated smoke application (scopes `r
 
 ```sh
 OCTOREVIEW_BASE_URL=https://reviews.example.com OCTOREVIEW_API_KEY=... \
-OCTOREVIEW_TENANT_ID=mbizmarket OCTOREVIEW_SMOKE_APPLICATION_ID=smoke scripts/smoke-upload.sh
+OCTOREVIEW_TENANT_ID=example OCTOREVIEW_SMOKE_APPLICATION_ID=smoke scripts/smoke-upload.sh
 ```
 
 Run it after each deployment and from your monitoring on a schedule. A failed `upload_put` or

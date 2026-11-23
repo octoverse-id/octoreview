@@ -11,8 +11,8 @@
 #      (--wait returns once "migrate" exited 0 and "app" is healthy.)
 #   3. Put a TLS reverse proxy in front of 127.0.0.1:8000 (docs/deployment.md has the proxy
 #      settings) and create a service key:
-#        docker compose exec app python manage.py create_service_token --name mbizmarket \
-#          --tenant mbizmarket --application storefront --namespace-wildcard \
+#        docker compose exec app python manage.py create_service_token --name storefront \
+#          --tenant example --application storefront --namespace-wildcard \
 #          --scope reviews:read --scope reviews:write --scope media:write
 #
 # Upgrading: the image appears on four lines (migrate, app, dispatcher, cleanup); move them

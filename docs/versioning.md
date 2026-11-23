@@ -4,7 +4,7 @@ Octoreview follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## Release line policy
 
-The server ships `1.0.0-rc.N` tags until its first consumer integration (Mbizmarket)
+The server ships `1.0.0-rc.N` tags until a production integration on the `s3` backend
 passes, then `1.0.0`. Release candidates publish immutable image tags without moving
 `latest` or stable aliases.
 
