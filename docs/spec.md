@@ -16,9 +16,9 @@ Release lines:
   or an S3-compatible store): this server with the `local` and `s3` storage backends, and the Go,
   PHP and JavaScript SDKs. Server `1.0.0-rc.N` until the Mbizmarket integration passes, then
   `1.0.0`; SDKs `0.x`.
-- **Line 2**: Azure Blob and native GCS backends, each "beta" until its real-cloud smoke run
-  passes. The contract in this file is frozen in line 1 for every backend, so line 2 adds no
-  breaking change.
+- **Line 2**: Azure Blob and native GCS backends, each "beta" until a customer's smoke run on its
+  own account passes (section 19). The contract in this file is frozen in line 1 for every backend,
+  so line 2 adds no breaking change.
 
 ---
 
@@ -1131,9 +1131,15 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
 - **Release candidates.** rc tags (`vX.Y.Z-rc.N`) publish immutable image tags without moving
   `latest` or stable aliases. `contract-drift.yml` and `resolve-latest-tag` treat the newest rc as
   latest until `1.0.0`.
-- **Release smoke.** Before each tag, a smoke run of the upload flow (including the browser
-  hand-off) uses one real bucket per provider and each documented signing mode. A backend stays
-  "beta" until its smoke run passes once.
+- **Release smoke.** Octoreview owns no cloud account and never holds a customer's credentials
+  (owner decision, 2026-11-23). Before each tag, the upload flow runs against the S3 emulator in CI:
+  `storage-emulators`, the `compose-quickstart` run on the `s3` profile, and each SDK's `s3`
+  integration run. Real-cloud evidence comes from a customer. The customer runs `manage.py
+  check_storage`, `scripts/smoke-upload.sh` and the browser hand-off from its storefront origin
+  against its own bucket, in its own deployment. It reports the outcome and the request ids, never
+  keys, and a maintainer records them on the release issue (`docs/release.md`). A backend stays
+  "beta" until one customer run on a real account passes; for AWS S3 that is the Mbizmarket
+  integration, which gates `1.0.0`.
 - **Publishing.**
   - npm publishes from CI through npm trusted publishing (OIDC, `--provenance`, no long-lived
     token).

@@ -15,6 +15,9 @@ release workflow; until the first release it records the invariants every releas
   force-pushing a `v*` tag, admins included. Only repo admins can delete a wrong tag
   (`release tags: deletion is admin-only`), and the version is then re-cut, not re-used.
 - `make release-check` must pass on the release commit.
+- Octoreview owns no cloud account. Before a tag, the storage gates are the emulator runs in CI
+  (`storage-emulators`, `compose-quickstart` on the `s3` profile, each SDK's `s3` integration
+  run). Real-cloud evidence comes from customers (see [Customer smoke runs](#customer-smoke-runs)).
 
 ## Steps
 
@@ -29,6 +32,22 @@ release workflow; until the first release it records the invariants every releas
    `docker-smoke` on amd64), attests provenance and an SBOM per platform, verifies them, checks
    an anonymous pull and promotes the tags (`docs/versioning.md`). A failed run is re-run, never
    re-tagged: a version that is already published is re-promoted from its existing digest.
+
+## Customer smoke runs
+
+A backend leaves "beta" in `docs/storage.md` when one customer run on a real account passes
+(`spec.md` section 19). The customer runs these in its own deployment, against its own bucket,
+with its own credentials:
+
+1. `manage.py check_storage` from a pod or host that reaches the bucket's public endpoint.
+2. `scripts/smoke-upload.sh` with a key for a dedicated smoke application
+   (`docs/operations.md`, "Smoke test").
+3. The browser hand-off: an upload from the storefront origin through the presigned URL, which
+   proves the bucket's CORS rule.
+
+The customer sends each step's outcome and its request ids to a maintainer, who records them on
+the release issue. Keys and presigned URLs are never sent or recorded. The maintainer then changes
+the backend's status in `docs/storage.md` in a normal PR that links that record.
 
 ## Rehearsing a release
 
