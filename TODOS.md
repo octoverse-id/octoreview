@@ -25,8 +25,8 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
 - **Cons:** Needs an owner identity model (namespace + actor), new events and audit types.
 - **Context:** The v1 namespace axis is the natural owner boundary.
 - **Effort:** human M / CC S. **Priority:** P2.
-- **Trigger:** Mbizmarket (a marketplace, the first consumer) asks for seller replies. The original
-  trigger "the first marketplace integration" fired on 2026-11-18; gate rev 4 item q4 keeps it deferred.
+- **Trigger:** an operator running a marketplace asks for seller replies. Gate rev 4 item q4
+  (2026-11-18) keeps it deferred until then.
 
 ### PRD-3: Multi-criteria ratings — DEFERRED
 
@@ -128,16 +128,16 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
 - **Why:** A Python consumer (for example Octocart Core, Python/Django) would otherwise hand-roll
   HTTP calls.
 - **Effort:** human M / CC S. **Priority:** P3. **Trigger:** a Python consumer commits to integrate.
-- **Status (2026-11-18):** not triggered. The owner corrected the first consumer to Mbizmarket
-  (Go, PHP and JavaScript), so the earlier "trigger fired" note and gate item q2 are withdrawn.
+- **Status (2026-11-18):** not triggered. Release line 1 ships the Go, PHP and JavaScript SDKs
+  (owner correction), so the earlier "trigger fired" note and gate item q2 are withdrawn.
 
 ### PLT-7: PHP 7.4 compatibility line — CLOSED
 - **What:** A rector-generated `support/php7.4` 1.x line, as octonomy-php built.
 - **Why:** octonomy-php's one known prospect runs PHP 7.4.
 - **Effort:** human M / CC S. **Priority:** P3. **Trigger:** a consumer on PHP below 8.2 commits
   to integrate.
-- **Status (2026-11-19):** closed. The owner confirmed that Mbizmarket's lowest PHP version is 8.2,
-  so octoreview-php ships one line requiring PHP 8.2 or later.
+- **Status (2026-11-19):** closed. The owner set the floor at PHP 8.2 (PHP 8.1 reached end of
+  life on 2025-12-31), so octoreview-php ships one line requiring PHP 8.2 or later.
 
 ## Added by the Eng review (2026-11-18)
 
@@ -166,8 +166,8 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
   (`hvc1`/`hev1`), which Chrome and Firefox often cannot play.
 - **Why:** iPhones record HEVC by default; v1 accepts it (magic bytes pass) and only documents the
   playback risk (Eng cycle-2 N17).
-- **Effort:** human S / CC S. **Priority:** P3. **Trigger:** Mbizmarket reports unplayable review
-  videos, or a consumer asks for transcoding.
+- **Effort:** human S / CC S. **Priority:** P3. **Trigger:** an operator reports unplayable review
+  videos, or asks for transcoding.
 
 ## Added by the Eng rerun, cycle 3 (2026-11-18)
 
@@ -178,7 +178,7 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
   cycle-3 A2). Kept out of line 1 because Azure SAS cannot enforce it and one completion path for
   every backend is simpler to build and test.
 - **Effort:** human M / CC S. **Priority:** P3. **Trigger:** copy cost or `complete` latency shows up
-  in Mbizmarket's production metrics.
+  in an operator's production metrics.
 
 ### PLT-11: Quota delta counter — DEFERRED
 - **What:** An `ApplicationStorageUsage` row locked last and updated by deltas, plus a nightly
@@ -190,8 +190,8 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
 ### PLT-12: Audit log retention — DEFERRED
 - **What:** `prune_audit_logs --older-than <days>` with a per-application default and an export hook.
 - **Why:** `audit_logs` is append-only and grows without bound (Eng cycle-3 E7).
-- **Effort:** human S / CC S. **Priority:** P3. **Trigger:** audit table above 10M rows or a retention
-  requirement from Mbizmarket.
+- **Effort:** human S / CC S. **Priority:** P3. **Trigger:** audit table above 10M rows or an
+  operator's retention requirement.
 
 ### PLT-13: `reviews:read_unpublished` scope — DEFERRED
 - **What:** A separate scope for reading unpublished review text (author path, detail of

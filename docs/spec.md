@@ -12,11 +12,10 @@ lists the values the plan left open that this file settles.
 
 Release lines:
 
-- **Line 1** (first consumer: Mbizmarket, a Go, PHP and JavaScript stack whose media go to AWS S3
-  or an S3-compatible store): this server with the `local` and `s3` storage backends, and the Go,
-  PHP and JavaScript SDKs. Server `1.0.0-rc.N` until the Mbizmarket integration passes, then
-  `1.0.0`; SDKs `0.x`.
-- **Line 2**: Azure Blob and native GCS backends, each "beta" until a customer's smoke run on its
+- **Line 1**: this server with the `local` and `s3` (AWS S3 and S3-compatible) storage backends,
+  and the Go, PHP and JavaScript SDKs. Server `1.0.0-rc.N` until a production integration on the
+  `s3` backend passes, then `1.0.0`; SDKs `0.x`.
+- **Line 2**: Azure Blob and native GCS backends, each "beta" until an operator's smoke run on its
   own account passes (section 19). The contract in this file is frozen in line 1 for every backend,
   so line 2 adds no breaking change.
 
@@ -63,7 +62,7 @@ stores external entity data (names, prices, descriptions stay with the caller).
   require a global-only or `namespace_wildcard` grant; an exact-namespace grant gets 403.
   `GET /audit-logs` with an exact-namespace grant returns only that namespace's rows.
 - **403 details:** `reason`, `required_scope`, `grant_scope`.
-- **Least-privilege keys for Mbizmarket** (documented in `docs/api.md`):
+- **Least-privilege keys for a storefront integration** (documented in `docs/api.md`):
   - The backend that submits reviews: `reviews:write`, `media:write`, `entities:read`, plus
     `reviews:attest` when it submits post-purchase reviews.
   - The moderation console: `reviews:read`, `reviews:moderate`.
@@ -733,8 +732,8 @@ and recommends a separate media host.
 - **Private storage.** `url` is a presigned GET URL (`OCTOREVIEW_MEDIA_URL_TTL_SECONDS`, default
   900, capped as in 7.8). On the local backend it is `/api/v1/media-files/{token}`.
 - **Public-CDN mode.** `OCTOREVIEW_MEDIA_PUBLIC_BASE_URL` makes `url` the base URL plus the final
-  key, unsigned. This is the recommended mode for Mbizmarket storefront pages: stable image URLs,
-  no per-request signing.
+  key, unsigned. This is the recommended mode for storefront pages: stable image URLs, no
+  per-request signing.
   - Hidden or rejected objects stay reachable by URL until they are deleted.
   - Public-CDN keys expose tenant and application ids.
   - `docs/operations.md` covers CDN purge after erasure, or a short CDN TTL.
@@ -1066,7 +1065,7 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
 - **Languages.**
   - Go: dependency-free `net/http`, functional options, `context.Context` first, `go` directive per
     `docs/versioning.md`.
-  - PHP: PHP >= 8.2, one line: Mbizmarket's lowest PHP service runs 8.2 (answered 2026-11-19;
+  - PHP: PHP >= 8.2, one line: PHP 8.1 reached end of life on 2025-12-31 (decided 2026-11-19;
     TODOS PLT-7 closed). PSR-18 with Guzzle by default, immutable request objects.
   - JavaScript: TypeScript strict, axios, dual ESM + CJS, Node >= 20. It refuses browser
     construction unless the caller sets `dangerouslyAllowBrowser: true`.
@@ -1131,15 +1130,15 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
 - **Release candidates.** rc tags (`vX.Y.Z-rc.N`) publish immutable image tags without moving
   `latest` or stable aliases. `contract-drift.yml` and `resolve-latest-tag` treat the newest rc as
   latest until `1.0.0`.
-- **Release smoke.** Octoreview owns no cloud account and never holds a customer's credentials
+- **Release smoke.** Octoreview owns no cloud account and never holds an operator's credentials
   (owner decision, 2026-11-23). Before each tag, the upload flow runs against the S3 emulator in CI:
   `storage-emulators`, the `compose-quickstart` run on the `s3` profile, and each SDK's `s3`
-  integration run. Real-cloud evidence comes from a customer. The customer runs `manage.py
-  check_storage`, `scripts/smoke-upload.sh` and the browser hand-off from its storefront origin
-  against its own bucket, in its own deployment. It reports the outcome and the request ids, never
-  keys, and a maintainer records them on the release issue (`docs/release.md`). A backend stays
-  "beta" until one customer run on a real account passes; for AWS S3 that is the Mbizmarket
-  integration, which gates `1.0.0`.
+  integration run. Real-cloud evidence comes from an operator: someone running Octoreview on their
+  own infrastructure runs `manage.py check_storage`, `scripts/smoke-upload.sh` and the browser
+  hand-off from their storefront origin against their own bucket. They report the outcome and the
+  request ids, never keys, and a maintainer records them on the release issue (`docs/release.md`). A
+  backend stays "beta" until one operator run on a real account passes; for AWS S3 that is the
+  production integration that gates `1.0.0`.
 - **Publishing.**
   - npm publishes from CI through npm trusted publishing (OIDC, `--provenance`, no long-lived
     token).
@@ -1154,7 +1153,7 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
 
 Video transcoding, thumbnails and resizing; automatic content moderation; end-user
 authentication; GraphQL; per-tenant storage backends (PLT-2); helpfulness votes (PRD-1); merchant
-replies (PRD-2, which waits for Mbizmarket to ask); multi-criteria ratings (PRD-3); weighted scores
+replies (PRD-2, until an operator asks); multi-criteria ratings (PRD-3); weighted scores
 (PRD-4); an MCP server (PLT-1); systemd units (DEP-1); a shared `octoverse-core` (PLT-3);
 write-once uploads (PLT-10); a quota delta counter (PLT-11); audit retention (PLT-12); a
 `reviews:read_unpublished` scope (PLT-13); rate limiting (DEP-3); a Python SDK (PLT-6); the
@@ -1188,7 +1187,7 @@ attempt-key fallback for stores without conditional copy (PLT-14). See
 | 21 | Cross-Origin-Resource-Policy | `same-site` (Eng S6) | configurable, default `cross-origin` (Eng R17) |
 | 22 | SDK upload entry points | `media.upload(reviewId, file\|stream\|bytes)` (base), `media.upload(reviewId, path)` (DX) | `media.uploadFile` / `uploadBytes` / `uploadStream` (Eng H3) |
 | 23 | SDK integration jobs | skip until a published rc (Eng H2); run against `edge` (Eng R8) | PR CI pins a `sha-<commit>` image; a scheduled job runs `edge` (Eng N20) |
-| 24 | Compose quickstart check | Go quickstart (DX); JS quickstart (gate rev 1 for Octocart) | server CI runs the curl quickstart; each SDK's CI runs its own (owner correction, Mbizmarket) |
+| 24 | Compose quickstart check | Go quickstart (DX); JS quickstart (gate rev 1 for Octocart) | server CI runs the curl quickstart; each SDK's CI runs its own (owner correction) |
 | 25 | Erasure scope | within the caller's grant (Eng erasure inventory) | an application-wide grant is required (Eng N8) |
 | 26 | Erasure of outbox payloads | rewrite payloads and re-check `redacted_at` before sending (CEO, Eng) | not needed: events are thin; dead letters are redacted (Eng N3, N14) |
 | 27 | Event payloads | full review content (CEO, DX) | thin: ids, status, rating, counts, versions; never author data except `author.erased` (Eng N3, gate d20a) |

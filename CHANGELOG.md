@@ -9,9 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- AWS S3 is listed as "beta" in `docs/storage.md` until a customer's smoke run on its own bucket
+- AWS S3 is listed as "beta" in `docs/storage.md` until an operator's smoke run on its own bucket
   passes. Octoreview owns no cloud account. Release tags are gated on the S3 emulator runs in CI,
-  and real-cloud evidence comes from customer smoke runs (`docs/release.md`, `spec.md`
+  and real-cloud evidence comes from operator smoke runs (`docs/release.md`, `spec.md`
   section 19).
 
 ## [1.0.0-rc.1] - 2026-11-23
