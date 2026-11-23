@@ -1066,8 +1066,8 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
 - **Languages.**
   - Go: dependency-free `net/http`, functional options, `context.Context` first, `go` directive per
     `docs/versioning.md`.
-  - PHP: PHP >= 8.2 (a 7.4-8.1 line joins only if Mbizmarket needs it: TODOS PLT-7, asked at the M2
-    kickoff), PSR-18 with Guzzle by default, immutable request objects.
+  - PHP: PHP >= 8.2, one line: Mbizmarket's lowest PHP service runs 8.2 (answered 2026-11-19;
+    TODOS PLT-7 closed). PSR-18 with Guzzle by default, immutable request objects.
   - JavaScript: TypeScript strict, axios, dual ESM + CJS, Node >= 20. It refuses browser
     construction unless the caller sets `dangerouslyAllowBrowser: true`.
 - **Contract gate.** Each SDK vendors `docs/openapi.yaml`. Its contract gate is offline in
