@@ -7,14 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
+## [1.0.0-rc.2] - 2026-11-24
 
-- AWS S3 is listed as "beta" in `docs/storage.md` until an operator's smoke run on its own bucket
-  passes. Octoreview owns no cloud account. Release tags are gated on the S3 emulator runs in CI,
-  and real-cloud evidence comes from operator smoke runs (`docs/release.md`, `spec.md`
-  section 19).
-
-## [1.0.0-rc.1] - 2026-11-23
+The first release candidate. `1.0.0-rc.1` was never tagged: its release merge was cut before
+later docs fixes, so its entries are listed here.
 
 ### Added
 
@@ -75,6 +71,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- AWS S3 is listed as "beta" in `docs/storage.md` until an operator's smoke run on its own bucket
+  passes. Octoreview owns no cloud account. Release tags are gated on the S3 emulator runs in CI,
+  and real-cloud evidence comes from operator smoke runs (`docs/release.md`, `spec.md`
+  section 19).
 - The local token paths (`/media-uploads/{token}`, `/media-files/{token}`) answer 404 on a cloud
   backend, and media tokens refuse an empty signing secret.
 - A replayed upload intent's URL is capped by the signing credential's lifetime, like a new one.

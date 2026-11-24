@@ -37,7 +37,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: cleanup-media
-              image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.1
+              image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.2
               # `args`, not `command`: the image entrypoint still runs `manage.py check` first.
               args: ["python", "manage.py", "cleanup_media"]
               envFrom:
