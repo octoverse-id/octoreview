@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Write-side queries name the tenant: the row-lock helpers, the review and media services, the
+  entity and settings reloads and the rating updates take or carry `tenant_id`, so an id from
+  another tenant is not found whatever the caller passes. The signed-token paths and the
+  cross-tenant maintenance jobs say in a comment why they differ (AGENTS.md).
 - `GET /reviews/{id}/media` (`listReviewMedia`) takes `limit`/`offset` and answers the
   `{data, pagination}` envelope (`MediaList`), like every other list. It returned every
   non-deleted row in a bare `{data}`, and `invalid` rows have no per-review bound. The SDKs page

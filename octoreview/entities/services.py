@@ -103,7 +103,7 @@ def upsert_entity(
         )
         if created:
             return entity, True
-        entity = Entity.objects.select_for_update().get(pk=entity.pk)
+        entity = Entity.objects.select_for_update().get(pk=entity.pk, tenant_id=entity.tenant_id)
         before = _snapshot(entity, ENTITY_SNAPSHOT_FIELDS)
         for field, value in values.items():
             setattr(entity, field, value)
@@ -118,7 +118,7 @@ def update_entity(entity: Entity, values: dict, audit_context: AuditContext) -> 
     """PATCH /entities/{id}: metadata replaced whole, `null` clears an override, `is_active`."""
 
     with transaction.atomic():
-        entity = Entity.objects.select_for_update().get(pk=entity.pk)
+        entity = Entity.objects.select_for_update().get(pk=entity.pk, tenant_id=entity.tenant_id)
         before = _snapshot(entity, ENTITY_SNAPSHOT_FIELDS)
         for field, value in values.items():
             setattr(entity, field, value)
@@ -159,7 +159,9 @@ def put_settings(
                     )
             except IntegrityError:
                 row = get_settings(tenant_id, application_id)
-        row = ApplicationSettings.objects.select_for_update().get(pk=row.pk)
+        row = ApplicationSettings.objects.select_for_update().get(
+            pk=row.pk, tenant_id=tenant_id, application_id=application_id
+        )
         before = _snapshot(row, SETTINGS_FIELDS)
         for field in SETTINGS_FIELDS:
             setattr(row, field, values[field])

@@ -25,7 +25,7 @@ class Contribution:
 
 
 def apply_delta(
-    entity_id, *, remove: Contribution | None = None, add: Contribution | None = None
+    entity: Entity, *, remove: Contribution | None = None, add: Contribution | None = None
 ) -> bool:
     """Move one review's contribution; returns whether the aggregates changed.
 
@@ -53,8 +53,7 @@ def apply_delta(
     changes = {field: F(field) + amount for field, amount in deltas.items() if amount}
     if not changes:
         return False
-    Entity.objects.filter(pk=entity_id).update(**changes)
-    return True
+    return Entity.objects.filter(pk=entity.pk, tenant_id=entity.tenant_id).update(**changes) > 0
 
 
 AGGREGATE_FIELDS = (
@@ -82,10 +81,10 @@ def current_aggregates(entity: Entity) -> dict[str, int]:
     return {field: getattr(entity, field) for field in AGGREGATE_FIELDS}
 
 
-def replace_aggregates(entity_id, values: dict[str, int]) -> None:
+def replace_aggregates(entity: Entity, values: dict[str, int]) -> None:
     """Repair path for `recompute_ratings`: overwrite with recomputed values (caller locks)."""
 
-    Entity.objects.filter(pk=entity_id).update(
+    Entity.objects.filter(pk=entity.pk, tenant_id=entity.tenant_id).update(
         **{field: values[field] for field in AGGREGATE_FIELDS}
     )
 

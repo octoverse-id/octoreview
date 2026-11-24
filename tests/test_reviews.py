@@ -433,3 +433,46 @@ def test_create_review_rechecks_the_locked_entity(api_client, headers, admin):
         create_review(stale, NewReview(author_id="u2", rating=4), AuditContext())
     assert raised.value.code == "entity_inactive"
     assert Review.objects.filter(entity=stale).count() == 1
+
+
+def test_write_paths_refuse_another_tenants_ids(api_client, headers, admin):
+    """Locks and services name the tenant in every query (AGENTS.md), whatever the caller passes."""
+
+    from octoreview.core.audit_context import AuditContext
+    from octoreview.core.errors import NotFoundError
+    from octoreview.entities.ratings import Contribution, apply_delta
+    from octoreview.lifecycle import media as media_lifecycle
+    from octoreview.lifecycle import services, transitions
+
+    create = api_client.post(
+        "/api/v1/reviews",
+        {
+            "application_id": "app-1",
+            "entity_type": "product",
+            "external_id": "sku-scope",
+            "author_id": "u1",
+            "rating": 5,
+        },
+        format="json",
+        **headers(admin),
+    )
+    assert create.status_code == 201
+    review_id = create.json()["data"]["id"]
+    before = Review.objects.values("status", "rating", "version", "media_version").get(pk=review_id)
+    ctx = AuditContext()
+    intent = media_lifecycle.IntentRequest(kind="image", content_type="image/png", size_bytes=10)
+    refused = [
+        lambda: services.transition_review(review_id, transitions.HIDE, ctx, tenant_id="tenant-b"),
+        lambda: services.update_review(review_id, {"rating": 1}, ctx, tenant_id="tenant-b"),
+        lambda: media_lifecycle.create_intent(review_id, intent, ctx, tenant_id="tenant-b"),
+    ]
+    for call in refused:
+        with pytest.raises(NotFoundError):
+            call()
+    after = Review.objects.values("status", "rating", "version", "media_version").get(pk=review_id)
+    assert after == before
+
+    foreign = Entity.objects.get(external_id="sku-scope")
+    foreign.tenant_id = "tenant-b"
+    assert apply_delta(foreign, add=Contribution(1, False)) is False
+    assert Entity.objects.get(external_id="sku-scope").rating_count == 1

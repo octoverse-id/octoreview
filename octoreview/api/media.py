@@ -101,7 +101,10 @@ def media_collection(request, review_id):
     review = review_selectors.get_review(request, review_id, for_write=True)
     data = _validated(IntentSerializer, request.data)
     result = media_lifecycle.create_intent(
-        review.id, media_lifecycle.IntentRequest(**data), AuditContext.from_request(request)
+        review.id,
+        media_lifecycle.IntentRequest(**data),
+        AuditContext.from_request(request),
+        tenant_id=review.tenant_id,
     )
     upload = None
     if result.target is not None:
@@ -121,7 +124,9 @@ def media_collection(request, review_id):
 @api_view(["POST"])
 def media_complete(request, review_id, media_id):
     review = review_selectors.get_review(request, review_id, for_write=True)
-    media = media_lifecycle.complete(review.id, media_id, AuditContext.from_request(request))
+    media = media_lifecycle.complete(
+        review.id, media_id, AuditContext.from_request(request), tenant_id=review.tenant_id
+    )
     review.refresh_from_db()
     return data_response(_represent(request, review, media))
 
@@ -130,7 +135,9 @@ def media_complete(request, review_id, media_id):
 @api_view(["DELETE"])
 def media_detail(request, review_id, media_id):
     review = review_selectors.get_review(request, review_id, for_write=True)
-    media = media_lifecycle.delete_media(review.id, media_id, AuditContext.from_request(request))
+    media = media_lifecycle.delete_media(
+        review.id, media_id, AuditContext.from_request(request), tenant_id=review.tenant_id
+    )
     return data_response(_represent(request, review, media))
 
 
@@ -143,6 +150,7 @@ def _moderate(request, review_id, media_id, action):
         media_id,
         action,
         AuditContext.from_request(request),
+        tenant_id=review.tenant_id,
         reason=data.get("reason"),
         expected_version=data.get("expected_version"),
         expected_media_version=data.get("expected_media_version"),
@@ -206,6 +214,8 @@ def media_upload(request, token):
         claims = tokens.verify(token, tokens.UPLOAD, now=timezone.now())
     except (tokens.TokenInvalid, tokens.TokenExpired) as exc:
         return _token_error(request, exc, tokens.UPLOAD)
+    # No tenant header on a token path: the HMAC-signed token is the scope. It binds this media
+    # id and key, which only this tenant's intent issued (docs/spec.md section 7.5).
     media = ReviewMedia.objects.filter(pk=claims.media_id, staging_key=claims.key).first()
     if media is None:
         return json_error(request, "upload_token_invalid", "This URL is not valid.", 403)
@@ -304,6 +314,7 @@ def media_file(request, token):
         claims = tokens.verify(token, tokens.DOWNLOAD, now=timezone.now())
     except (tokens.TokenInvalid, tokens.TokenExpired) as exc:
         return _token_error(request, exc, tokens.DOWNLOAD)
+    # No tenant header on a token path: the HMAC-signed token is the scope (see media_upload).
     media = (
         ReviewMedia.objects.select_related("review")
         .filter(pk=claims.media_id, storage_key=claims.key)

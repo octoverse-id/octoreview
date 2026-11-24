@@ -38,6 +38,7 @@ from tests.test_media import (
 )
 
 CTX = AuditContext(actor_id="race-test")
+TENANT = "tenant-a"
 
 
 @pytest.fixture
@@ -84,11 +85,11 @@ def assert_consistent(review_id):
 
 
 def run_phases(review_id, media_id, between_two_and_three=None):
-    media, attempt = lifecycle_media._phase_one(review_id, media_id)
+    media, attempt = lifecycle_media._phase_one(review_id, media_id, TENANT)
     outcome = lifecycle_media._phase_two(media)
     if between_two_and_three:
         between_two_and_three()
-    return lifecycle_media._phase_three(review_id, media_id, attempt, outcome, CTX)
+    return lifecycle_media._phase_three(review_id, media_id, TENANT, attempt, outcome, CTX)
 
 
 # --- deterministic interleavings ----------------------------------------------------------------
@@ -108,11 +109,11 @@ def test_complete_vs_complete_with_a_re_put_between(api_client, headers, admin, 
 
     monkeypatch.setattr(files, "read_head", read_head_after_a_re_put)
     with pytest.raises(DomainError) as first:
-        lifecycle_media.complete(review_id, media_id, CTX)
+        lifecycle_media.complete(review_id, media_id, CTX, tenant_id=TENANT)
     assert first.value.code == "upload_changed"
     assert ReviewMedia.objects.get().completion_lease_until is None
 
-    second = lifecycle_media.complete(review_id, media_id, CTX)
+    second = lifecycle_media.complete(review_id, media_id, CTX, tenant_id=TENANT)
     assert second.status == MediaStatus.READY
     assert_consistent(review_id)
 
@@ -120,16 +121,16 @@ def test_complete_vs_complete_with_a_re_put_between(api_client, headers, admin, 
 @pytest.mark.django_db
 def test_stale_attempt_loses_to_a_newer_one(api_client, headers, admin):
     review_id, media_id = staged(api_client, headers, admin)
-    media_a, attempt_a = lifecycle_media._phase_one(review_id, media_id)
+    media_a, attempt_a = lifecycle_media._phase_one(review_id, media_id, TENANT)
     # A stalls past its lease; B takes over and finishes first.
     ReviewMedia.objects.update(completion_lease_until=timezone.now() - timedelta(seconds=1))
     outcome_a = lifecycle_media._phase_two(media_a)
-    media_b, attempt_b = lifecycle_media._phase_one(review_id, media_id)
+    media_b, attempt_b = lifecycle_media._phase_one(review_id, media_id, TENANT)
     with pytest.raises(DomainError) as missing:
         lifecycle_media._phase_two(media_b)  # A already moved the staged file
     assert missing.value.code == "upload_not_found"
-    lifecycle_media._release_lease(review_id, media_id, attempt_b)
-    result = lifecycle_media._phase_three(review_id, media_id, attempt_a, outcome_a, CTX)
+    lifecycle_media._release_lease(review_id, media_id, TENANT, attempt_b)
+    result = lifecycle_media._phase_three(review_id, media_id, TENANT, attempt_a, outcome_a, CTX)
     # B's release cleared the attempt id, so A's result is discarded with its final object.
     assert result.status == MediaStatus.PENDING
     assert stored_files(review_id) == set()
@@ -142,7 +143,7 @@ def test_complete_vs_media_delete(api_client, headers, admin):
     result = run_phases(
         review_id,
         media_id,
-        lambda: lifecycle_media.delete_media(review_id, media_id, CTX),
+        lambda: lifecycle_media.delete_media(review_id, media_id, CTX, tenant_id=TENANT),
     )
     assert result.status == MediaStatus.DELETED
     assert stored_files(review_id) == set()
@@ -196,7 +197,10 @@ def test_local_put_vs_put(api_client, headers, admin):
     staged_path = Path(settings.MEDIA_ROOT) / staging_key
     assert staged_path.read_bytes() == PNG  # last writer wins, whole
     assert not list(staged_path.parent.glob(f"{staged_path.name}.part-*"))
-    assert lifecycle_media.complete(review_id, media_id, CTX).status == MediaStatus.READY
+    assert (
+        lifecycle_media.complete(review_id, media_id, CTX, tenant_id=TENANT).status
+        == MediaStatus.READY
+    )
     assert_consistent(review_id)
 
 

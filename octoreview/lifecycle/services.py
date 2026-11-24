@@ -143,7 +143,7 @@ def _audit(review: Review, action: str, ctx: AuditContext, changes: dict, **meta
 
 
 def _move_aggregates(entity: Entity, before, after, ctx: AuditContext) -> None:
-    if apply_delta(entity.id, remove=before, add=after):
+    if apply_delta(entity, remove=before, add=after):
         emit_rating_changed(entity, ctx)
 
 
@@ -191,7 +191,7 @@ def create_review(entity: Entity, data: NewReview, ctx: AuditContext) -> Review:
     settings = get_settings(entity.tenant_id, entity.application_id)
     mode = settings.effective_moderation_mode if settings else ModerationMode.AUTO_PUBLISH
     status = ReviewStatus.PUBLISHED if mode == ModerationMode.AUTO_PUBLISH else ReviewStatus.PENDING
-    with transaction.atomic(), locked_entity(entity.id) as locked:
+    with transaction.atomic(), locked_entity(entity.id, tenant_id=entity.tenant_id) as locked:
         # The entity may have been deactivated since the caller resolved it; the locked row
         # decides (docs/spec.md section 4.2).
         if not locked.is_active:
@@ -238,10 +238,10 @@ def create_review(entity: Entity, data: NewReview, ctx: AuditContext) -> Review:
         return review
 
 
-def update_review(review_id, values: dict, ctx: AuditContext) -> Review:
+def update_review(review_id, values: dict, ctx: AuditContext, *, tenant_id: str) -> Review:
     """PATCH: immediate fields apply at once; content waits as a revision under pre-moderation."""
 
-    with transaction.atomic(), locked_review(review_id) as (entity, review):
+    with transaction.atomic(), locked_review(review_id, tenant_id=tenant_id) as (entity, review):
         if review.status not in transitions.EDITABLE_STATUSES:
             raise transitions.invalid_transition(review.status, transitions.EDIT)
         if not entity.is_active:
@@ -315,11 +315,12 @@ def transition_review(
     action: str,
     ctx: AuditContext,
     *,
+    tenant_id: str,
     reason: str | None = None,
     expected_version: int | None = None,
     expected_media_version: int | None = None,
 ) -> Review:
-    with transaction.atomic(), locked_review(review_id) as (entity, review):
+    with transaction.atomic(), locked_review(review_id, tenant_id=tenant_id) as (entity, review):
         target = transitions.next_status(review.status, action)
         if action == transitions.PUBLISH:
             # Nothing the moderator has not seen may go public (docs/spec.md section 4.4).
@@ -357,9 +358,15 @@ def _current_revision(review: Review, revision_id) -> ReviewRevision:
 
 
 def approve_revision(
-    review_id, revision_id, ctx: AuditContext, *, expected_version, expected_media_version
+    review_id,
+    revision_id,
+    ctx: AuditContext,
+    *,
+    tenant_id: str,
+    expected_version,
+    expected_media_version,
 ) -> Review:
-    with transaction.atomic(), locked_review(review_id) as (entity, review):
+    with transaction.atomic(), locked_review(review_id, tenant_id=tenant_id) as (entity, review):
         revision = _current_revision(review, revision_id)
         check_expected_versions(review, expected_version, expected_media_version)
         if revision.base_version != review.version:
@@ -382,8 +389,10 @@ def approve_revision(
         return review
 
 
-def reject_revision(review_id, revision_id, ctx: AuditContext, *, reason=None) -> Review:
-    with transaction.atomic(), locked_review(review_id) as (_entity, review):
+def reject_revision(
+    review_id, revision_id, ctx: AuditContext, *, tenant_id: str, reason=None
+) -> Review:
+    with transaction.atomic(), locked_review(review_id, tenant_id=tenant_id) as (_entity, review):
         revision = _current_revision(review, revision_id)
         revision.delete()
         _audit(review, "review.revision_rejected", ctx, {}, reason=reason)
