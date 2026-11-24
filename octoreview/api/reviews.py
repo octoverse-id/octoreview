@@ -234,7 +234,9 @@ def review_detail(request, review_id):
     review = selectors.get_review(request, review_id, for_write=True)
     ctx = AuditContext.from_request(request)
     if request.method == "DELETE":
-        review = services.transition_review(review.id, transitions.REMOVE, ctx)
+        review = services.transition_review(
+            review.id, transitions.REMOVE, ctx, tenant_id=review.tenant_id
+        )
         return data_response(_represent(request, review))
     if "source_ref" in request.data:
         raise DomainError(
@@ -245,7 +247,7 @@ def review_detail(request, review_id):
     data = _validated(ReviewPatchSerializer, request.data)
     if "is_verified_purchase" in data:
         require_permission(request, "reviews:attest")
-    review = services.update_review(review.id, dict(data), ctx)
+    review = services.update_review(review.id, dict(data), ctx, tenant_id=review.tenant_id)
     return data_response(_represent(request, review))
 
 
@@ -260,6 +262,7 @@ def _moderate(request, review_id, action):
         review.id,
         action,
         ctx,
+        tenant_id=review.tenant_id,
         reason=data.get("reason"),
         expected_version=data.get("expected_version"),
         expected_media_version=data.get("expected_media_version"),
@@ -316,6 +319,7 @@ def revision_approve(request, review_id):
         review.id,
         data["revision_id"],
         AuditContext.from_request(request),
+        tenant_id=review.tenant_id,
         expected_version=data["expected_version"],
         expected_media_version=data["expected_media_version"],
     )
@@ -328,7 +332,10 @@ def revision_reject(request, review_id):
     review = selectors.get_review(request, review_id, for_write=True)
     data = _validated(RevisionActionSerializer, request.data)
     review = services.reject_revision(
-        review.id, data["revision_id"], AuditContext.from_request(request)
+        review.id,
+        data["revision_id"],
+        AuditContext.from_request(request),
+        tenant_id=review.tenant_id,
     )
     return data_response(_represent(request, review))
 

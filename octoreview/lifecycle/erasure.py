@@ -103,8 +103,8 @@ def _redact_audit_actor(tenant_id: str, application_id: str, author_id: str, era
     ).update(actor_id=erased)
 
 
-def _erase_one(review_id, erased: str, ctx: AuditContext) -> int:
-    with transaction.atomic(), locked_review(review_id) as (entity, review):
+def _erase_one(review_id, erased: str, ctx: AuditContext, *, tenant_id: str) -> int:
+    with transaction.atomic(), locked_review(review_id, tenant_id=tenant_id) as (entity, review):
         old_contribution = contribution(review)
         review.title = None
         review.body = None
@@ -126,7 +126,7 @@ def _erase_one(review_id, erased: str, ctx: AuditContext) -> int:
 
             touch_review(review)
         _redact_review_audit(review)
-        if apply_delta(entity.id, remove=old_contribution):
+        if apply_delta(entity, remove=old_contribution):
             emit_rating_changed(entity, ctx)
         return pending_deletes
 
@@ -147,7 +147,7 @@ def erase_author(
     )
     pending_media_deletes = 0
     for review_id in batch:
-        pending_media_deletes += _erase_one(review_id, erased, audit_context)
+        pending_media_deletes += _erase_one(review_id, erased, audit_context, tenant_id=tenant_id)
     # Every call, so an author who acted in this application without reviews is covered too.
     with transaction.atomic():
         _redact_audit_actor(tenant_id, application_id, author_id, erased)

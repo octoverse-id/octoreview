@@ -22,31 +22,29 @@ def make_entity(external_id="sku-1", **kwargs):
 
 def test_apply_delta_adds_moves_and_removes():
     entity = make_entity()
-    assert apply_delta(entity.id, add=Contribution(5, verified=True)) is True
-    assert apply_delta(entity.id, add=Contribution(3, verified=False)) is True
-    apply_delta(entity.id, remove=Contribution(3, False), add=Contribution(4, False))
+    assert apply_delta(entity, add=Contribution(5, verified=True)) is True
+    assert apply_delta(entity, add=Contribution(3, verified=False)) is True
+    apply_delta(entity, remove=Contribution(3, False), add=Contribution(4, False))
     entity.refresh_from_db()
     assert (entity.rating_count, entity.rating_sum) == (2, 9)
     assert (entity.rating_3_count, entity.rating_4_count, entity.rating_5_count) == (0, 1, 1)
     assert entity.verified_review_count == 1
-    apply_delta(entity.id, remove=Contribution(5, verified=True))
+    apply_delta(entity, remove=Contribution(5, verified=True))
     entity.refresh_from_db()
     assert (entity.rating_count, entity.rating_sum, entity.verified_review_count) == (1, 4, 0)
 
 
 def test_apply_delta_noop_when_nothing_changes():
     entity = make_entity()
-    assert (
-        apply_delta(entity.id, remove=Contribution(4, False), add=Contribution(4, False)) is False
-    )
+    assert apply_delta(entity, remove=Contribution(4, False), add=Contribution(4, False)) is False
     with pytest.raises(ValueError):
-        apply_delta(entity.id, add=Contribution(6, False))
+        apply_delta(entity, add=Contribution(6, False))
 
 
 def test_summary_shape():
     entity = make_entity()
     for rating in (5, 4, 4):
-        apply_delta(entity.id, add=Contribution(rating, rating == 5))
+        apply_delta(entity, add=Contribution(rating, rating == 5))
     entity.refresh_from_db()
     assert summary(entity) == {
         "rating_count": 3,
@@ -66,8 +64,8 @@ def test_summary_of_nothing_is_zeroed():
 
 def test_rating_endpoint_returns_a_json_number(api_client, make_key, headers):
     entity = make_entity()
-    apply_delta(entity.id, add=Contribution(5, False))
-    apply_delta(entity.id, add=Contribution(4, False))
+    apply_delta(entity, add=Contribution(5, False))
+    apply_delta(entity, add=Contribution(4, False))
     token = make_key({"application_id": "app-1", "scopes": ["entities:read"]})
     response = api_client.get(
         f"/api/v1/entities/{entity.id}/rating?application_id=app-1", **headers(token)
@@ -95,7 +93,7 @@ def reader(make_key):
 
 def test_batch_answers_in_request_order_with_duplicates_and_unknowns(api_client, headers, reader):
     known = make_entity("a")
-    apply_delta(known.id, add=Contribution(5, False))
+    apply_delta(known, add=Contribution(5, False))
     response = batch(api_client, headers, reader, ["a", "missing", "a"])
     data = response.json()["data"]
     assert [row["external_id"] for row in data] == ["a", "missing", "a"]

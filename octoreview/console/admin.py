@@ -186,7 +186,9 @@ class ReviewAdmin(ModerationModelAdmin):
         self.run_each(
             request,
             queryset,
-            lambda review, ctx: transition_review(review.id, action, ctx),
+            lambda review, ctx: transition_review(
+                review.id, action, ctx, tenant_id=review.tenant_id
+            ),
             done,
         )
 
@@ -230,6 +232,7 @@ class ReviewAdmin(ModerationModelAdmin):
                 review.id,
                 transitions.PUBLISH,
                 ctx,
+                tenant_id=review.tenant_id,
                 expected_version=expected_version,
                 expected_media_version=expected_media_version,
             )
@@ -309,6 +312,7 @@ class ReviewMediaAdmin(ModerationModelAdmin):
                 media.id,
                 "approve",
                 ctx,
+                tenant_id=media.tenant_id,
                 expected_version=expected[0],
                 expected_media_version=expected[1],
             )
@@ -322,6 +326,8 @@ class ReviewMediaAdmin(ModerationModelAdmin):
         self.run_each(
             request,
             queryset,
-            lambda media, ctx: moderate_media(media.review_id, media.id, "reject", ctx),
+            lambda media, ctx: moderate_media(
+                media.review_id, media.id, "reject", ctx, tenant_id=media.tenant_id
+            ),
             "Rejected",
         )

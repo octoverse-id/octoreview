@@ -94,16 +94,26 @@ def touch_review(review: Review) -> None:
 
     review.media_version += 1
     review.ready_media_count = ReviewMedia.objects.filter(
-        review_id=review.id, status=MediaStatus.READY, moderation_status__in=VISIBLE_MODERATION
+        tenant_id=review.tenant_id,
+        review_id=review.id,
+        status=MediaStatus.READY,
+        moderation_status__in=VISIBLE_MODERATION,
     ).count()
     review.save(update_fields=["media_version", "ready_media_count", "updated_at"])
 
 
 @contextmanager
-def _locked(review_id, *, media_id=None, settings_row: bool = False):
-    """Lock in the documented order: ApplicationSettings → Review → ReviewMedia."""
+def _locked(review_id, *, tenant_id: str, media_id=None, settings_row: bool = False):
+    """Lock in the documented order: ApplicationSettings → Review → ReviewMedia.
 
-    review_meta = Review.objects.filter(pk=review_id).values("tenant_id", "application_id").first()
+    Every query names the tenant (AGENTS.md): an id from another tenant is not found.
+    """
+
+    review_meta = (
+        Review.objects.filter(pk=review_id, tenant_id=tenant_id)
+        .values("tenant_id", "application_id")
+        .first()
+    )
     if review_meta is None:
         raise NotFoundError()
     if settings_row:
@@ -113,11 +123,17 @@ def _locked(review_id, *, media_id=None, settings_row: bool = False):
     # `of=("self",)`: without it PostgreSQL's FOR UPDATE also locks the joined entity row, which
     # inverts the Entity → Review order and deadlocks against review writes.
     review = (
-        Review.objects.select_for_update(of=("self",)).select_related("entity").get(pk=review_id)
+        Review.objects.select_for_update(of=("self",))
+        .select_related("entity")
+        .get(pk=review_id, tenant_id=tenant_id)
     )
     media = None
     if media_id is not None:
-        media = ReviewMedia.objects.select_for_update().filter(pk=media_id, review=review).first()
+        media = (
+            ReviewMedia.objects.select_for_update()
+            .filter(pk=media_id, tenant_id=tenant_id, review=review)
+            .first()
+        )
         if media is None:
             raise NotFoundError()
     with holding_locks():
@@ -196,11 +212,17 @@ def _check_review_accepts_media(review: Review) -> None:
         raise entity_inactive(review.entity)
 
 
-def create_intent(review_id, request: IntentRequest, ctx: AuditContext) -> IntentResult:
+def create_intent(
+    review_id, request: IntentRequest, ctx: AuditContext, *, tenant_id: str
+) -> IntentResult:
     """Upload intent: validate, sign before any lock, then reserve the slot in one transaction."""
 
     now = timezone.now()
-    review = Review.objects.select_related("entity").get(pk=review_id)
+    review = (
+        Review.objects.select_related("entity").filter(pk=review_id, tenant_id=tenant_id).first()
+    )
+    if review is None:
+        raise NotFoundError()
     _check_review_accepts_media(review)
     media_type = MEDIA_TYPES.get(request.content_type)
     app_settings = get_settings(review.tenant_id, review.application_id)
@@ -225,7 +247,7 @@ def create_intent(review_id, request: IntentRequest, ctx: AuditContext) -> Inten
         )
 
     if request.client_upload_id:
-        existing = _existing_upload(review.id, request.client_upload_id)
+        existing = _existing_upload(review, request.client_upload_id)
         if existing is not None:
             return IntentResult(existing, _replay_target(existing, now), created=False)
 
@@ -263,7 +285,10 @@ def create_intent(review_id, request: IntentRequest, ctx: AuditContext) -> Inten
         "storage_location": _location(),
         "upload_expires_at": target.expires_at,
     }
-    with transaction.atomic(), _locked(review.id, settings_row=quota is not None) as (review, _):
+    with (
+        transaction.atomic(),
+        _locked(review.id, tenant_id=tenant_id, settings_row=quota is not None) as (review, _),
+    ):
         _check_review_accepts_media(review)
         media, created = _reserve(review, request, policy, quota, now, new_row, ctx)
     if not created:
@@ -281,7 +306,7 @@ def _reserve(review, request, policy, quota, now, new_row: dict, ctx) -> tuple[R
     """
 
     if request.client_upload_id:
-        existing = _existing_upload(review.id, request.client_upload_id)
+        existing = _existing_upload(review, request.client_upload_id)
         if existing is not None:
             return existing, False
     _check_capacity(review, request, policy, quota, now)
@@ -303,7 +328,7 @@ def _reserve(review, request, policy, quota, now, new_row: dict, ctx) -> tuple[R
             )
     except IntegrityError:
         # Backstop for the lookup above: the row that holds the client_upload_id is the replay.
-        existing = _existing_upload(review.id, request.client_upload_id)
+        existing = _existing_upload(review, request.client_upload_id)
         if existing is None:
             raise
         return existing, False
@@ -353,9 +378,11 @@ def _check_capacity(review, request, policy, quota, now) -> None:
         )
 
 
-def _existing_upload(review_id, client_upload_id: str) -> ReviewMedia | None:
+def _existing_upload(review: Review, client_upload_id: str) -> ReviewMedia | None:
     return (
-        ReviewMedia.objects.filter(review_id=review_id, client_upload_id=client_upload_id)
+        ReviewMedia.objects.filter(
+            tenant_id=review.tenant_id, review_id=review.id, client_upload_id=client_upload_id
+        )
         .exclude(status=MediaStatus.DELETED)
         .first()
     )
@@ -418,22 +445,25 @@ def _invalid(media: ReviewMedia, reason: str) -> DomainError:
     )
 
 
-def complete(review_id, media_id, ctx: AuditContext) -> ReviewMedia:
+def complete(review_id, media_id, ctx: AuditContext, *, tenant_id: str) -> ReviewMedia:
     with completion_slot():
-        media, attempt = _phase_one(review_id, media_id)
+        media, attempt = _phase_one(review_id, media_id, tenant_id)
         if attempt is None:
             return media
         try:
             outcome = _phase_two(media)
         except DomainError:
-            _release_lease(review_id, media_id, attempt)
+            _release_lease(review_id, media_id, tenant_id, attempt)
             raise
-        return _phase_three(review_id, media_id, attempt, outcome, ctx)
+        return _phase_three(review_id, media_id, tenant_id, attempt, outcome, ctx)
 
 
-def _phase_one(review_id, media_id):
+def _phase_one(review_id, media_id, tenant_id: str):
     now = timezone.now()
-    with transaction.atomic(), _locked(review_id, media_id=media_id) as (review, media):
+    with (
+        transaction.atomic(),
+        _locked(review_id, tenant_id=tenant_id, media_id=media_id) as (review, media),
+    ):
         if media.status == MediaStatus.READY:
             return media, None
         if media.status == MediaStatus.INVALID:
@@ -523,8 +553,11 @@ def _validate_published(media: ReviewMedia, final: str) -> Outcome:
     return Outcome(final_key=final)
 
 
-def _release_lease(review_id, media_id, attempt) -> None:
-    with transaction.atomic(), _locked(review_id, media_id=media_id) as (_review, media):
+def _release_lease(review_id, media_id, tenant_id: str, attempt) -> None:
+    with (
+        transaction.atomic(),
+        _locked(review_id, tenant_id=tenant_id, media_id=media_id) as (_review, media),
+    ):
         if media.completion_attempt_id == attempt:
             media.completion_attempt_id = None
             media.completion_lease_until = None
@@ -533,15 +566,17 @@ def _release_lease(review_id, media_id, attempt) -> None:
             )
 
 
-def _phase_three(review_id, media_id, attempt, outcome: Outcome, ctx) -> ReviewMedia:
+def _phase_three(review_id, media_id, tenant_id: str, attempt, outcome: Outcome, ctx):
     now = timezone.now()
-    review_meta = Review.objects.get(pk=review_id)
+    review_meta = Review.objects.get(pk=review_id, tenant_id=tenant_id)
     quota = _quota_set(review_meta)
     delete_after = []
     error = None
     with (
         transaction.atomic(),
-        _locked(review_id, media_id=media_id, settings_row=quota is not None) as (review, media),
+        _locked(
+            review_id, tenant_id=tenant_id, media_id=media_id, settings_row=quota is not None
+        ) as (review, media),
     ):
         if media.status != MediaStatus.PENDING or media.completion_attempt_id != attempt:
             # Another attempt finished first; its result stands, ours is discarded.
@@ -616,7 +651,7 @@ def _phase_three(review_id, media_id, attempt, outcome: Outcome, ctx) -> ReviewM
             result = media
     failed = _delete_quietly(delete_after)
     if error is not None and outcome.final_key and outcome.final_key not in failed:
-        _forget_object(media_id, outcome.final_key)
+        _forget_object(media_id, outcome.final_key, tenant_id=tenant_id)
     if error is not None:
         raise error
     return result
@@ -660,11 +695,12 @@ def _delete_quietly(keys) -> set:
     return failed
 
 
-def _forget_object(media_id, key: str) -> None:
+def _forget_object(media_id, key: str, *, tenant_id: str) -> None:
     """The object is gone, so a row that never became ready no longer needs to record it."""
 
     ReviewMedia.objects.filter(
         pk=media_id,
+        tenant_id=tenant_id,
         storage_key=key,
         status__in=[MediaStatus.INVALID, MediaStatus.PENDING],
     ).update(storage_key=None)
@@ -673,8 +709,11 @@ def _forget_object(media_id, key: str) -> None:
 # --- delete and moderation ----------------------------------------------------------------------
 
 
-def delete_media(review_id, media_id, ctx: AuditContext) -> ReviewMedia:
-    with transaction.atomic(), _locked(review_id, media_id=media_id) as (review, media):
+def delete_media(review_id, media_id, ctx: AuditContext, *, tenant_id: str) -> ReviewMedia:
+    with (
+        transaction.atomic(),
+        _locked(review_id, tenant_id=tenant_id, media_id=media_id) as (review, media),
+    ):
         if review.status == ReviewStatus.REMOVED:
             raise transitions.invalid_transition(review.status, "delete_media")
         if media.status in (MediaStatus.DELETED, MediaStatus.DELETING):
@@ -702,7 +741,10 @@ def finish_delete(media: ReviewMedia, ctx: AuditContext) -> ReviewMedia:
                 files.delete(key)
     except files.StorageError:
         return media  # stays `deleting`; cleanup_media retries it
-    with transaction.atomic(), _locked(media.review_id, media_id=media.id) as (review, row):
+    with (
+        transaction.atomic(),
+        _locked(media.review_id, tenant_id=media.tenant_id, media_id=media.id) as (review, row),
+    ):
         if row.status != MediaStatus.DELETING:
             return row
         row.status = MediaStatus.DELETED
@@ -718,11 +760,15 @@ def moderate_media(
     action: str,
     ctx: AuditContext,
     *,
+    tenant_id: str,
     reason=None,
     expected_version=None,
     expected_media_version=None,
 ) -> ReviewMedia:
-    with transaction.atomic(), _locked(review_id, media_id=media_id) as (review, media):
+    with (
+        transaction.atomic(),
+        _locked(review_id, tenant_id=tenant_id, media_id=media_id) as (review, media),
+    ):
         if media.status != MediaStatus.READY:
             raise DomainError(
                 f"Only ready media can be moderated; this media is {media.status}.",
@@ -792,6 +838,8 @@ def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
         )
     ).order_by("id")
     for media_id in _claim(candidates, now):
+        # A cross-tenant maintenance job: the claimed id is this job's own, and each row's
+        # tenant scopes its locks below.
         media = ReviewMedia.objects.select_related("review").get(pk=media_id)
         if media.status == MediaStatus.INVALID:
             if _delete_rejected_object(media):
@@ -800,7 +848,13 @@ def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
                 result.failed.append(media.storage_key)
             continue
         if media.status != MediaStatus.DELETING:
-            with transaction.atomic(), _locked(media.review_id, media_id=media.id) as (review, row):
+            with (
+                transaction.atomic(),
+                _locked(media.review_id, tenant_id=media.tenant_id, media_id=media.id) as (
+                    review,
+                    row,
+                ),
+            ):
                 # The claim read the row without its review lock; a completion lease or a
                 # status change since then wins, and the row is left for a later run.
                 if not _still_eligible(row, review, now, expired_cutoff):
@@ -835,7 +889,7 @@ def _delete_rejected_object(media: ReviewMedia) -> bool:
         files.delete(media.storage_key)
     except files.StorageError:
         return False
-    _forget_object(media.id, media.storage_key)
+    _forget_object(media.id, media.storage_key, tenant_id=media.tenant_id)
     return True
 
 

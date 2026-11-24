@@ -57,14 +57,14 @@ def _media_count_mismatches(repair: bool) -> list[dict]:
         if last_id is not None:
             queryset = queryset.filter(id__gt=last_id)
         batch = list(
-            queryset.annotate(expected=visible).values_list("id", "ready_media_count", "expected")[
-                :BATCH_SIZE
-            ]
+            queryset.annotate(expected=visible).values_list(
+                "id", "tenant_id", "ready_media_count", "expected"
+            )[:BATCH_SIZE]
         )
         if not batch:
             return mismatches
         last_id = batch[-1][0]
-        for review_id, stored, expected in batch:
+        for review_id, tenant_id, stored, expected in batch:
             if stored == expected:
                 continue
             mismatches.append(
@@ -76,7 +76,11 @@ def _media_count_mismatches(repair: bool) -> list[dict]:
             )
             if repair:
                 # Recount under the lock: media may have moved since the batch read.
-                with transaction.atomic(), locked_review(review_id) as (_entity, review):
+                # A cross-tenant maintenance job: each row's own tenant scopes its lock.
+                with (
+                    transaction.atomic(),
+                    locked_review(review_id, tenant_id=tenant_id) as (_entity, review),
+                ):
                     review.ready_media_count = _visible_media(review_id)
                     review.save(update_fields=["ready_media_count", "updated_at"])
 
@@ -104,5 +108,9 @@ def _entity_mismatches(repair: bool) -> list[dict]:
                 }
             )
             if repair:
-                with transaction.atomic(), locked_entity(entity.id):
-                    ratings.replace_aggregates(entity.id, _expected([entity.id])[entity.id])
+                # A cross-tenant maintenance job: each row's own tenant scopes its lock.
+                with (
+                    transaction.atomic(),
+                    locked_entity(entity.id, tenant_id=entity.tenant_id) as locked,
+                ):
+                    ratings.replace_aggregates(locked, _expected([entity.id])[entity.id])

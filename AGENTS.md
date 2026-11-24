@@ -51,7 +51,9 @@ restating it.
 - Django 5.2 LTS, Django REST Framework, PostgreSQL in production (SQLite also in CI), UUID
   primary keys, uv + ruff + pytest.
 - Business rules live in services, not views or serializers; tenant isolation is explicit in
-  every query.
+  every query, the lock helpers and write-side reloads included. The exceptions say so in a
+  comment: the signed-token paths (the token is the scope) and the cross-tenant maintenance jobs
+  (`cleanup_media`, `recompute_ratings`), which carry each row's own tenant into its locks.
 - Explain non-obvious invariants with a comment next to the code that enforces them.
 - Generic pieces (request ids, auth, errors, pagination, service_auth, audit, outbox) are copied
   from octonomy, never imported at runtime. Record the octonomy commit each copied module came
