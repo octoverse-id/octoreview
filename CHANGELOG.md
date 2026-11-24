@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Erasure rewrites audit `actor_id` only in the erased application's rows; before, it also rewrote
+  matching rows of the tenant's other applications. A self-erasure (the request's `X-Actor-ID` is
+  the author) records the pseudonym as its actor instead of the raw id, and an author with audit
+  rows but no reviews in the application has them redacted too.
+
 ## [1.0.0-rc.2] - 2026-11-24
 
 The first release candidate. `1.0.0-rc.1` was never tagged: its release merge was cut before

@@ -5,6 +5,7 @@ import pytest
 from django.apps import apps
 from django.core.management import call_command
 
+from octoreview.audit.models import AuditLog
 from octoreview.events.models import OutboxEvent
 from octoreview.lifecycle.erasure import erased_author_id
 from octoreview.lifecycle.recompute import recompute_ratings
@@ -91,6 +92,57 @@ def test_erasure_is_idempotent(api_client, headers, admin):
     again = erase(api_client, headers, admin)
     assert again.json()["data"]["reviews_redacted"] == 0
     assert again.json()["data"]["remaining"] == 0
+
+
+def test_a_self_erasure_records_the_pseudonym_as_its_actor(api_client, headers, admin):
+    make_reviews(api_client, headers, admin)
+    response = erase(api_client, headers, admin, ns={"X-Actor-ID": SENTINEL})
+    assert response.status_code == 200
+    assert sentinel_sweep() == []
+    completion = AuditLog.objects.get(action="author.erased")
+    assert completion.actor_id == erased_author_id("tenant-a", "app-1", SENTINEL)
+
+
+def test_erasure_leaves_other_applications_audit_actors_alone(api_client, headers, admin, make_key):
+    other = make_key({"application_id": "app-2", "namespace_wildcard": True, "scopes": SCOPES})
+    response = api_client.post(
+        "/api/v1/reviews",
+        {
+            "application_id": "app-2",
+            "entity_type": "product",
+            "external_id": "sku-9",
+            "author_id": "someone-else",
+            "rating": 5,
+        },
+        format="json",
+        **headers(other, **{"X-Actor-ID": SENTINEL}),
+    )
+    assert response.status_code == 201
+    make_reviews(api_client, headers, admin)
+    assert erase(api_client, headers, admin).status_code == 200
+    app_1 = set(AuditLog.objects.filter(application_id="app-1").values_list("actor_id", flat=True))
+    app_2 = set(AuditLog.objects.filter(application_id="app-2").values_list("actor_id", flat=True))
+    assert app_1 == {erased_author_id("tenant-a", "app-1", SENTINEL), None}
+    assert app_2 == {SENTINEL}
+
+
+def test_erasure_redacts_an_actor_without_reviews(api_client, headers, admin):
+    response = api_client.post(
+        "/api/v1/reviews",
+        {
+            "application_id": "app-1",
+            "entity_type": "product",
+            "external_id": "sku-9",
+            "author_id": "someone-else",
+            "rating": 5,
+        },
+        format="json",
+        **headers(admin, **{"X-Actor-ID": SENTINEL}),
+    )
+    assert response.status_code == 201
+    response = erase(api_client, headers, admin)
+    assert response.json()["data"]["reviews_redacted"] == 0
+    assert sentinel_sweep() == []
 
 
 def test_erasure_needs_an_application_wide_grant(api_client, headers, make_key):

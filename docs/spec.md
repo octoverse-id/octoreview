@@ -757,8 +757,13 @@ For each of the author's reviews, in batches of 100 per call and one short trans
 - The pending revision is deleted, and the review moves to `removed` (aggregates stay correct).
 - Its media moves to `deleting`; `cleanup_media` deletes the objects.
 - Audit rows: personal fields in `changes`/`metadata` of the author's reviews become
-  `{"erased": true}`, and `actor_id` equal to the author becomes `erased:<hmac>`.
+  `{"erased": true}`.
 - Dead-letter outbox rows about the author are redacted.
+
+**Audit actors.** Every call also rewrites `actor_id` equal to the author to `erased:<hmac>` in the
+application's audit rows, and only there: the same id in another application of the tenant is
+another application's record. When the request's `X-Actor-ID` is the author being erased, every
+row the erasure writes records `erased:<hmac>` as its actor.
 
 Events carry no author data (section 10), so there are no other outbox payloads to rewrite.
 
