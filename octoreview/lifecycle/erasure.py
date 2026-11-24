@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from django.conf import settings
 from django.db import transaction
@@ -82,17 +82,29 @@ def _redact_value(value):
     return value
 
 
-def _redact_audit_rows(review_id, author_id: str, erased: str, tenant_id: str) -> None:
-    for row in AuditLog.objects.filter(aggregate_type="review", aggregate_id=str(review_id)):
+def _redact_review_audit(review: Review) -> None:
+    rows = AuditLog.objects.filter(
+        tenant_id=review.tenant_id,
+        application_id=review.application_id,
+        aggregate_type="review",
+        aggregate_id=str(review.id),
+    )
+    for row in rows:
         row.changes = _redact_value(row.changes)
         row.metadata = _redact_value(row.metadata)
         row.save(update_fields=["changes", "metadata"])
-    AuditLog.objects.filter(tenant_id=tenant_id, actor_id=author_id).update(actor_id=erased)
 
 
-def _erase_one(review_id, author_id: str, ctx: AuditContext) -> int:
+def _redact_audit_actor(tenant_id: str, application_id: str, author_id: str, erased: str) -> None:
+    # Erasure is per application (docs/spec.md section 9): the same author id in another
+    # application of the tenant is another person's record, and this key's grant does not reach it.
+    AuditLog.objects.filter(
+        tenant_id=tenant_id, application_id=application_id, actor_id=author_id
+    ).update(actor_id=erased)
+
+
+def _erase_one(review_id, erased: str, ctx: AuditContext) -> int:
     with transaction.atomic(), locked_review(review_id) as (entity, review):
-        erased = erased_author_id(review.tenant_id, review.application_id, author_id)
         old_contribution = contribution(review)
         review.title = None
         review.body = None
@@ -113,7 +125,7 @@ def _erase_one(review_id, author_id: str, ctx: AuditContext) -> int:
             from octoreview.lifecycle.media import touch_review
 
             touch_review(review)
-        _redact_audit_rows(review.id, author_id, erased, review.tenant_id)
+        _redact_review_audit(review)
         if apply_delta(entity.id, remove=old_contribution):
             emit_rating_changed(entity, ctx)
         return pending_deletes
@@ -124,6 +136,10 @@ def erase_author(
 ) -> ErasureResult:
     """Redact up to BATCH_SIZE of the author's reviews; `remaining` says whether to call again."""
 
+    erased = erased_author_id(tenant_id, application_id, author_id)
+    if audit_context.actor_id == author_id:
+        # A self-erasure: every row this call writes carries the pseudonym, never the raw id.
+        audit_context = replace(audit_context, actor_id=erased)
     batch = list(
         pending_reviews(tenant_id, application_id, author_id).values_list("id", flat=True)[
             :BATCH_SIZE
@@ -131,7 +147,10 @@ def erase_author(
     )
     pending_media_deletes = 0
     for review_id in batch:
-        pending_media_deletes += _erase_one(review_id, author_id, audit_context)
+        pending_media_deletes += _erase_one(review_id, erased, audit_context)
+    # Every call, so an author who acted in this application without reviews is covered too.
+    with transaction.atomic():
+        _redact_audit_actor(tenant_id, application_id, author_id, erased)
     remaining = pending_reviews(tenant_id, application_id, author_id).count()
     result = ErasureResult(
         reviews_redacted=len(batch),
@@ -153,7 +172,7 @@ def erase_author(
                 application_id=application_id,
                 action="author.erased",
                 aggregate_type="author",
-                aggregate_id=erased_author_id(tenant_id, application_id, author_id),
+                aggregate_id=erased,
                 audit_context=audit_context,
                 metadata={"reviews_redacted": len(batch)},
             )
@@ -164,7 +183,7 @@ def erase_author(
                 application_id=application_id,
                 event_type=events.AUTHOR_ERASED,
                 resource_type="author",
-                resource_id=erased_author_id(tenant_id, application_id, author_id),
+                resource_id=erased,
                 payload={
                     "author_id": author_id,
                     "erased_at": timezone.now().isoformat(),
