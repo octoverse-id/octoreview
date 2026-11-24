@@ -405,3 +405,31 @@ def test_filters_and_sort(api_client, headers, admin, writer):
     ).json()["pagination"]["count"]
     assert by_key == 3
     assert api_client.get(f"{REVIEWS}?{APP}&sort=oldest", **headers(writer)).status_code == 400
+
+
+def test_create_review_rechecks_the_locked_entity(api_client, headers, admin):
+    """A deactivation that commits after the caller resolved the entity still wins (spec 4.2)."""
+
+    from octoreview.core.audit_context import AuditContext
+    from octoreview.core.errors import DomainError
+    from octoreview.lifecycle.services import NewReview, create_review
+
+    create = api_client.post(
+        "/api/v1/reviews",
+        {
+            "application_id": "app-1",
+            "entity_type": "product",
+            "external_id": "sku-race",
+            "author_id": "u1",
+            "rating": 5,
+        },
+        format="json",
+        **headers(admin),
+    )
+    assert create.status_code == 201
+    stale = Entity.objects.get(external_id="sku-race")
+    Entity.objects.filter(pk=stale.pk).update(is_active=False)
+    with pytest.raises(DomainError) as raised:
+        create_review(stale, NewReview(author_id="u2", rating=4), AuditContext())
+    assert raised.value.code == "entity_inactive"
+    assert Review.objects.filter(entity=stale).count() == 1

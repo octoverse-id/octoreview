@@ -18,6 +18,7 @@ from rest_framework.test import APIClient
 from octoreview.core.db import holding_locks
 from octoreview.entities.models import ApplicationSettings, Entity
 from octoreview.events.models import OutboxEvent
+from octoreview.lifecycle import media as media_lifecycle
 from octoreview.lifecycle.media import cleanup_media
 from octoreview.media import files, signatures, tokens
 from octoreview.media.models import MediaStatus, ReviewMedia
@@ -261,6 +262,26 @@ def test_intent_retry_replays_the_row_with_a_fresh_url(api_client, headers, admi
     assert ReviewMedia.objects.count() == 1
 
 
+def test_a_retry_that_waited_for_the_lock_is_a_replay(api_client, headers, admin, monkeypatch):
+    review = create_review(api_client, headers, admin)
+    Entity.objects.filter(external_id="sku-1").update(max_images=1)
+    first = intent(api_client, headers, admin, review["id"], client_upload_id="up-1")
+    assert first.status_code == 201
+    # The retry's lookup before the lock ran while the first request was still in flight.
+    real_lookup = media_lifecycle._existing_upload
+    calls = []
+
+    def first_lookup_misses(review_id, client_upload_id):
+        calls.append(client_upload_id)
+        return None if len(calls) == 1 else real_lookup(review_id, client_upload_id)
+
+    monkeypatch.setattr(media_lifecycle, "_existing_upload", first_lookup_misses)
+    retry = intent(api_client, headers, admin, review["id"], client_upload_id="up-1")
+    assert retry.status_code == 200, retry.json()
+    assert retry.json()["data"]["media"]["id"] == first.json()["data"]["media"]["id"]
+    assert ReviewMedia.objects.count() == 1
+
+
 # --- complete -----------------------------------------------------------------------------------
 
 
@@ -338,6 +359,72 @@ def test_ready_limit_is_rechecked_at_complete(api_client, headers, admin):
     assert ok.status_code == 200
     assert over.status_code == 422
     assert over.json()["error"]["details"]["reason"] == "over_limit"
+
+
+@pytest.mark.parametrize(
+    ("narrowed", "reason"),
+    [
+        ({"allowed_content_types": ["image/jpeg"]}, "type_not_allowed"),
+        ({"max_image_bytes": len(PNG) - 1}, "too_large"),
+    ],
+)
+def test_complete_applies_the_current_policy(api_client, headers, admin, narrowed, reason):
+    review = create_review(api_client, headers, admin)
+    data = intent(api_client, headers, admin, review["id"]).json()["data"]
+    assert put(APIClient(), data["upload"]["url"], PNG).status_code == 204
+    set_settings(**narrowed)
+    response = complete(api_client, headers, admin, review["id"], data["media"]["id"])
+    assert response.status_code == 422
+    assert response.json()["error"]["details"]["reason"] == reason
+    row = ReviewMedia.objects.get()
+    assert (row.status, row.invalid_reason, row.storage_key) == (MediaStatus.INVALID, reason, None)
+
+
+def final_path(row: ReviewMedia) -> Path:
+    review = row.review
+    return path_of(
+        files.final_key(
+            row.tenant_id, row.application_id, review.entity_id, review.id, row.id, "png"
+        )
+    )
+
+
+@pytest.mark.parametrize("recovery", ["cleanup", "delete"])
+def test_a_rejected_object_whose_delete_failed_is_deleted_later(
+    api_client, headers, admin, monkeypatch, recovery
+):
+    review = create_review(api_client, headers, admin)
+    first = intent(api_client, headers, admin, review["id"]).json()["data"]
+    second = intent(api_client, headers, admin, review["id"]).json()["data"]
+    for data in (first, second):
+        put(APIClient(), data["upload"]["url"], PNG)
+    Entity.objects.filter(external_id="sku-1").update(max_images=1)
+    assert (
+        complete(api_client, headers, admin, review["id"], first["media"]["id"]).status_code == 200
+    )
+    rejected_id = second["media"]["id"]
+    real_delete = files.delete
+
+    def final_delete_fails(key):
+        if rejected_id in key and not key.startswith("_staging"):
+            raise StorageError("delete", "storage is down")
+        return real_delete(key)
+
+    monkeypatch.setattr(files, "delete", final_delete_fails)
+    over = complete(api_client, headers, admin, review["id"], rejected_id)
+    assert over.json()["error"]["details"]["reason"] == "over_limit"
+    row = ReviewMedia.objects.get(pk=rejected_id)
+    assert row.storage_key and final_path(row).exists()
+    monkeypatch.setattr(files, "delete", real_delete)
+
+    if recovery == "cleanup":
+        assert cleanup_media().failed == []
+        row.refresh_from_db()
+        assert (row.status, row.storage_key) == (MediaStatus.INVALID, None)
+    else:
+        url = f"/api/v1/reviews/{review['id']}/media/{rejected_id}?{APP}"
+        assert api_client.delete(url, **headers(admin)).json()["data"]["status"] == "deleted"
+    assert not final_path(row).exists()
 
 
 # --- local upload endpoint ----------------------------------------------------------------------

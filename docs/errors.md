@@ -473,11 +473,12 @@ start beyond the end). `Content-Range: bytes */<size>` gives the size.
 free.
 
 **Details:** `reason`: `size_mismatch` (the file is not `size_bytes` long), `type_mismatch` (the
-bytes are not the declared `content_type`), `over_limit` (the slots filled meanwhile) or
-`over_quota` (the storage quota filled meanwhile).
+bytes are not the declared `content_type`), `type_not_allowed` (the type was removed from the
+allowed types meanwhile), `too_large` (the kind's max size was lowered meanwhile), `over_limit`
+(the slots filled meanwhile) or `over_quota` (the storage quota filled meanwhile).
 
-**Fix:** For a mismatch, upload the right file with a new intent. For a limit or quota, free space
-first.
+**Fix:** For a mismatch, upload the right file with a new intent. For a policy change, convert or
+shrink the file to the current policy first. For a limit or quota, free space first.
 
 **Recovery:** Not retryable for this media id.
 

@@ -13,6 +13,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   matching rows of the tenant's other applications. A self-erasure (the request's `X-Actor-ID` is
   the author) records the pseudonym as its actor instead of the raw id, and an author with audit
   rows but no reviews in the application has them redacted too.
+- `complete` applies the current policy, as spec 6.1 says: a type removed from the allowed types
+  or a size above a lowered cap since the intent now rejects the upload, with the new reasons
+  `type_not_allowed` and `too_large`.
+- A retry of an upload intent that waited for the review lock while the first request committed
+  is replayed (200), even when that request took the last slot or the last of the quota; it used to
+  get 409 `media_limit_exceeded` or `storage_quota_exceeded`.
+- A rejected or refused completion records its final object until the delete after commit
+  succeeds; `cleanup_media` and `DELETE` delete one whose delete failed. Before, such an object was
+  never deleted.
+- Creating a review re-checks that the locked entity is still active, so a deactivation that
+  commits meanwhile wins.
 
 ## [1.0.0-rc.2] - 2026-11-24
 

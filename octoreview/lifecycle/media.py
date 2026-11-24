@@ -256,84 +256,101 @@ def create_intent(review_id, request: IntentRequest, ctx: AuditContext) -> Inten
     except files.StorageError as exc:
         raise _storage_error(exc)
 
-    location = _location()
     quota = app_settings.max_storage_bytes if app_settings is not None else None
-    replayed = None
+    new_row = {
+        "id": media_id,
+        "staging_key": staging,
+        "storage_location": _location(),
+        "upload_expires_at": target.expires_at,
+    }
     with transaction.atomic(), _locked(review.id, settings_row=quota is not None) as (review, _):
         _check_review_accepts_media(review)
-        limit = policy.limit_for(request.kind)
-        ready, pending = selectors.slot_counts(review.id, request.kind, now=now)
-        if ready + pending >= limit:
-            raise DomainError(
-                f"This review already has its {limit} {request.kind} slot(s) in use; delete one "
-                "or wait for an abandoned upload to expire.",
-                {
-                    "kind": request.kind,
-                    "limit": limit,
-                    "ready_count": ready,
-                    "pending_count": pending,
-                    "next_slot_frees_at": _iso(
-                        selectors.next_slot_frees_at(review.id, request.kind, now=now)
-                    ),
-                    "policy_source": policy.sources[f"max_{request.kind}s"],
-                },
-                code="media_limit_exceeded",
-            )
-        if quota is not None:
-            usage = selectors.storage_usage(review.tenant_id, review.application_id, now=now)
-            if usage["stored_bytes"] + usage["reserved_bytes"] + request.size_bytes > quota:
-                # Emitted now, not on commit: this transaction rolls back with the 409.
-                metrics.emit_metric(
-                    metrics.QUOTA_REJECTED,
-                    tenant_id=review.tenant_id,
-                    application_id=review.application_id,
-                    kind=request.kind,
-                    backend=files.backend_name(),
-                    stage="intent",
-                )
-                raise DomainError(
-                    "The application's storage quota is full; delete media or raise "
-                    "max_storage_bytes.",
-                    {
-                        "max_storage_bytes": quota,
-                        **usage,
-                        "requested_bytes": request.size_bytes,
-                    },
-                    code="storage_quota_exceeded",
-                )
-        try:
-            with transaction.atomic():
-                media = ReviewMedia.objects.create(
-                    id=media_id,
-                    **_scope(review),
-                    review=review,
-                    kind=request.kind,
-                    status=MediaStatus.PENDING,
-                    storage_location=location,
-                    staging_key=staging,
-                    content_type=request.content_type,
-                    size_bytes=request.size_bytes,
-                    width=request.width,
-                    height=request.height,
-                    duration_seconds=request.duration_seconds,
-                    position=request.position,
-                    client_upload_id=request.client_upload_id,
-                    upload_expires_at=target.expires_at,
-                )
-        except IntegrityError:
-            # A concurrent retry with the same client_upload_id won; replay its row once the
-            # locks are released (re-signing is a storage call).
-            replayed = _existing_upload(review.id, request.client_upload_id)
-            if replayed is None:
-                raise
-        else:
-            _audit(media, "review_media.intent", ctx, size_bytes=request.size_bytes)
-            metrics.emit_on_commit(
-                metrics.MEDIA_INTENT, **_metric_scope(media), size_bytes=request.size_bytes
-            )
-    if replayed is not None:
-        return IntentResult(replayed, _replay_target(replayed, now), created=False)
+        media, created = _reserve(review, request, policy, quota, now, new_row, ctx)
+    if not created:
+        # Re-signing a replay is a storage call, so it waits until the locks are released.
+        return IntentResult(media, _replay_target(media, now), created=False)
     return IntentResult(media, target, created=True)
+
+
+def _reserve(review, request, policy, quota, now, new_row: dict, ctx) -> tuple[ReviewMedia, bool]:
+    """Under the review lock: replay the row with this client_upload_id, or reserve a slot.
+
+    The replay comes first (docs/spec.md section 7.3): a concurrent retry may have committed its
+    row while this request waited for the lock, and it is a replay even if that row took the last
+    slot or the last of the quota.
+    """
+
+    if request.client_upload_id:
+        existing = _existing_upload(review.id, request.client_upload_id)
+        if existing is not None:
+            return existing, False
+    _check_capacity(review, request, policy, quota, now)
+    try:
+        with transaction.atomic():
+            media = ReviewMedia.objects.create(
+                **new_row,
+                **_scope(review),
+                review=review,
+                kind=request.kind,
+                status=MediaStatus.PENDING,
+                content_type=request.content_type,
+                size_bytes=request.size_bytes,
+                width=request.width,
+                height=request.height,
+                duration_seconds=request.duration_seconds,
+                position=request.position,
+                client_upload_id=request.client_upload_id,
+            )
+    except IntegrityError:
+        # Backstop for the lookup above: the row that holds the client_upload_id is the replay.
+        existing = _existing_upload(review.id, request.client_upload_id)
+        if existing is None:
+            raise
+        return existing, False
+    _audit(media, "review_media.intent", ctx, size_bytes=request.size_bytes)
+    metrics.emit_on_commit(
+        metrics.MEDIA_INTENT, **_metric_scope(media), size_bytes=request.size_bytes
+    )
+    return media, True
+
+
+def _check_capacity(review, request, policy, quota, now) -> None:
+    limit = policy.limit_for(request.kind)
+    ready, pending = selectors.slot_counts(review.id, request.kind, now=now)
+    if ready + pending >= limit:
+        raise DomainError(
+            f"This review already has its {limit} {request.kind} slot(s) in use; delete one "
+            "or wait for an abandoned upload to expire.",
+            {
+                "kind": request.kind,
+                "limit": limit,
+                "ready_count": ready,
+                "pending_count": pending,
+                "next_slot_frees_at": _iso(
+                    selectors.next_slot_frees_at(review.id, request.kind, now=now)
+                ),
+                "policy_source": policy.sources[f"max_{request.kind}s"],
+            },
+            code="media_limit_exceeded",
+        )
+    if quota is None:
+        return
+    usage = selectors.storage_usage(review.tenant_id, review.application_id, now=now)
+    if usage["stored_bytes"] + usage["reserved_bytes"] + request.size_bytes > quota:
+        # Emitted now, not on commit: this transaction rolls back with the 409.
+        metrics.emit_metric(
+            metrics.QUOTA_REJECTED,
+            tenant_id=review.tenant_id,
+            application_id=review.application_id,
+            kind=request.kind,
+            backend=files.backend_name(),
+            stage="intent",
+        )
+        raise DomainError(
+            "The application's storage quota is full; delete media or raise max_storage_bytes.",
+            {"max_storage_bytes": quota, **usage, "requested_bytes": request.size_bytes},
+            code="storage_quota_exceeded",
+        )
 
 
 def _existing_upload(review_id, client_upload_id: str) -> ReviewMedia | None:
@@ -539,33 +556,25 @@ def _phase_three(review_id, media_id, attempt, outcome: Outcome, ctx) -> ReviewM
                 except DomainError as exc:
                     media.completion_attempt_id = None
                     media.completion_lease_until = None
+                    # Remembered until the delete after commit succeeds (spec section 7.7).
+                    media.storage_key = outcome.final_key
                     media.save(
                         update_fields=[
                             "completion_attempt_id",
                             "completion_lease_until",
+                            "storage_key",
                             "updated_at",
                         ]
                     )
                     delete_after.append(outcome.final_key)
                     error = exc
                 else:
-                    policy = effective_policy(
-                        review.entity, get_settings(review.tenant_id, review.application_id)
-                    )
-                    ready, _ = selectors.slot_counts(
-                        review.id, media.kind, now=now, exclude_id=media.id
-                    )
-                    if ready >= policy.limit_for(media.kind):
-                        reason = "over_limit"
-                    elif quota is not None:
-                        usage = selectors.storage_usage(
-                            review.tenant_id, review.application_id, now=now, exclude_id=media.id
-                        )
-                        if usage["stored_bytes"] + media.size_bytes > quota:
-                            reason = "over_quota"
+                    reason = _rejection_reason(review, media, quota, now)
             if error is None and reason is not None:
                 media.status = MediaStatus.INVALID
                 media.invalid_reason = reason
+                # A published object is remembered until its delete succeeds (spec section 7.7).
+                media.storage_key = outcome.final_key
                 metrics.emit_on_commit(
                     metrics.MEDIA_REJECTED, **_metric_scope(media), reason=reason
                 )
@@ -605,22 +614,60 @@ def _phase_three(review_id, media_id, attempt, outcome: Outcome, ctx) -> ReviewM
                 )
                 delete_after.append(media.staging_key)
             result = media
-    _delete_quietly(delete_after)
+    failed = _delete_quietly(delete_after)
+    if error is not None and outcome.final_key and outcome.final_key not in failed:
+        _forget_object(media_id, outcome.final_key)
     if error is not None:
         raise error
     return result
 
 
-def _delete_quietly(keys) -> None:
-    """Best-effort deletes after commit; lifecycle rules and cleanup_media back them up."""
+def _rejection_reason(review: Review, media: ReviewMedia, quota, now) -> str | None:
+    """Phase 3 applies the policy in force now, not the one the intent saw (spec section 6.1)."""
 
+    policy = effective_policy(review.entity, get_settings(review.tenant_id, review.application_id))
+    if media.content_type not in policy.allowed_content_types:
+        return "type_not_allowed"
+    if media.size_bytes > policy.max_bytes_for(media.kind):
+        return "too_large"
+    ready, _ = selectors.slot_counts(review.id, media.kind, now=now, exclude_id=media.id)
+    if ready >= policy.limit_for(media.kind):
+        return "over_limit"
+    if quota is not None:
+        usage = selectors.storage_usage(
+            review.tenant_id, review.application_id, now=now, exclude_id=media.id
+        )
+        if usage["stored_bytes"] + media.size_bytes > quota:
+            return "over_quota"
+    return None
+
+
+def _delete_quietly(keys) -> set:
+    """Best-effort deletes after commit; returns the keys whose delete failed.
+
+    The bucket lifecycle rule and the staging sweep back up staging keys; a final object is backed
+    up by the row that still records it in `storage_key` (cleanup_media, spec section 7.7).
+    """
+
+    failed = set()
     for key in keys:
         if not key:
             continue
         try:
             files.delete(key)
         except files.StorageError:
-            pass
+            failed.add(key)
+    return failed
+
+
+def _forget_object(media_id, key: str) -> None:
+    """The object is gone, so a row that never became ready no longer needs to record it."""
+
+    ReviewMedia.objects.filter(
+        pk=media_id,
+        storage_key=key,
+        status__in=[MediaStatus.INVALID, MediaStatus.PENDING],
+    ).update(storage_key=None)
 
 
 # --- delete and moderation ----------------------------------------------------------------------
@@ -632,7 +679,7 @@ def delete_media(review_id, media_id, ctx: AuditContext) -> ReviewMedia:
             raise transitions.invalid_transition(review.status, "delete_media")
         if media.status in (MediaStatus.DELETED, MediaStatus.DELETING):
             return media
-        if media.status == MediaStatus.INVALID:
+        if media.status == MediaStatus.INVALID and not media.storage_key:
             media.status = MediaStatus.DELETED
             media.save()
             touch_review(review)
@@ -725,7 +772,7 @@ def _claim(queryset, now) -> list:
 
 
 def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
-    """Expired pending uploads, media of removed reviews, and `deleting` retries."""
+    """Expired pending uploads, media of removed reviews, `deleting` retries, rejected objects."""
 
     ctx = ctx or AuditContext(actor_id="cleanup_media")
     now = timezone.now()
@@ -738,6 +785,7 @@ def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
         )
         & (Q(completion_lease_until__isnull=True) | Q(completion_lease_until__lt=now))
         | Q(status=MediaStatus.DELETING)
+        | Q(status=MediaStatus.INVALID, storage_key__isnull=False)
         | Q(
             review__status=ReviewStatus.REMOVED,
             status__in=[MediaStatus.READY, MediaStatus.PENDING],
@@ -745,6 +793,12 @@ def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
     ).order_by("id")
     for media_id in _claim(candidates, now):
         media = ReviewMedia.objects.select_related("review").get(pk=media_id)
+        if media.status == MediaStatus.INVALID:
+            if _delete_rejected_object(media):
+                result.deleted += 1
+            else:
+                result.failed.append(media.storage_key)
+            continue
         if media.status != MediaStatus.DELETING:
             with transaction.atomic(), _locked(media.review_id, media_id=media.id) as (review, row):
                 # The claim read the row without its review lock; a completion lease or a
@@ -770,6 +824,19 @@ def cleanup_media(ctx: AuditContext | None = None) -> CleanupResult:
     )
     metrics.emit_metric(metrics.CLEANUP_FAILED, count=len(result.failed), backend=backend)
     return result
+
+
+def _delete_rejected_object(media: ReviewMedia) -> bool:
+    """A rejected row's object whose delete after commit failed; the row itself stays `invalid`."""
+
+    if not media.storage_key:
+        return True
+    try:
+        files.delete(media.storage_key)
+    except files.StorageError:
+        return False
+    _forget_object(media.id, media.storage_key)
+    return True
 
 
 def _still_eligible(row: ReviewMedia, review: Review, now, expired_cutoff) -> bool:
