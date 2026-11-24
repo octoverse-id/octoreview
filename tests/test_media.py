@@ -262,6 +262,15 @@ def test_intent_retry_replays_the_row_with_a_fresh_url(api_client, headers, admi
     assert ReviewMedia.objects.count() == 1
 
 
+@pytest.mark.parametrize("field", ["position", "width", "height"])
+def test_intent_integers_fit_their_columns(api_client, headers, admin, field):
+    review = create_review(api_client, headers, admin)
+    response = intent(api_client, headers, admin, review["id"], **{field: 2**31})
+    assert response.status_code == 400
+    assert field in response.json()["error"]["details"]["fields"]
+    assert intent(api_client, headers, admin, review["id"], **{field: 2**31 - 1}).status_code == 201
+
+
 def test_a_retry_that_waited_for_the_lock_is_a_replay(api_client, headers, admin, monkeypatch):
     review = create_review(api_client, headers, admin)
     Entity.objects.filter(external_id="sku-1").update(max_images=1)
@@ -723,6 +732,22 @@ def test_delete_media(api_client, headers, admin):
     assert api_client.delete(url, **headers(admin)).json()["data"]["status"] == "deleted"
     listed = api_client.get(f"/api/v1/reviews/{review['id']}/media?{APP}", **headers(admin))
     assert listed.json()["data"] == []
+
+
+def test_the_media_list_is_paginated(api_client, headers, admin):
+    review = create_review(api_client, headers, admin)
+    ids = [
+        intent(api_client, headers, admin, review["id"], position=index).json()["data"]["media"][
+            "id"
+        ]
+        for index in range(3)
+    ]
+    url = f"/api/v1/reviews/{review['id']}/media?{APP}"
+    first = api_client.get(f"{url}&limit=2", **headers(admin)).json()
+    assert [row["id"] for row in first["data"]] == ids[:2]
+    assert first["pagination"] == {"limit": 2, "offset": 0, "count": 3}
+    rest = api_client.get(f"{url}&limit=2&offset=2", **headers(admin)).json()
+    assert [row["id"] for row in rest["data"]] == ids[2:]
 
 
 def test_delete_on_a_removed_review_is_refused(api_client, headers, admin):

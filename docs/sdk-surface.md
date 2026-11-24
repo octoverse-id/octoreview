@@ -8,7 +8,7 @@ file. `make openapi-check` fails when it is stale.
 | Class | Rule |
 | --- | --- |
 | `safe` | A read. The SDK retries on timeouts, 503 and 429, honoring Retry-After. |
-| `idempotent` | Repeating a success leaves the same state and answer. The SDK retries like a read. |
+| `idempotent` | Repeating a success leaves the same state and answer. The SDK retries like a read; completeMediaUpload also retries 409 complete_in_progress and upload_changed, as its OpenAPI description says. |
 | `keyed` | Idempotent when the idempotency field is sent. The SDK generates one when the caller does not, then retries like a read. |
 | `unsafe` | Never retried automatically. After a lost response a repeat may answer 409; read the resource to learn the outcome. |
 
@@ -39,7 +39,7 @@ file. `make openapi-check` fails when it is stale.
 | `getReviewRevision` | `Reviews.GetRevision` | `reviews()->getRevision` | `reviews.getRevision` | safe | `review_id` | `application_id` |
 | `approveReviewRevision` | `Reviews.ApproveRevision` | `reviews()->approveRevision` | `reviews.approveRevision` | unsafe | `review_id`, `revision_id`, `expected_version`, `expected_media_version` | `application_id` |
 | `rejectReviewRevision` | `Reviews.RejectRevision` | `reviews()->rejectRevision` | `reviews.rejectRevision` | unsafe | `review_id`, `revision_id` | `application_id` |
-| `listReviewMedia` | `Media.List` | `media()->list` | `media.list` | safe | `review_id` | `application_id`, `include_global`, `author_id`, `include_unpublished` |
+| `listReviewMedia` | `Media.List` | `media()->list` | `media.list` | safe | `review_id` | `application_id`, `include_global`, `author_id`, `include_unpublished`, `limit`, `offset` |
 | `createMediaUpload` | `Media.CreateUpload` | `media()->createUpload` | `media.createUpload` | keyed (`client_upload_id`) | `review_id`, `kind`, `content_type`, `size_bytes` | `application_id`, `client_upload_id`, `position`, `width`, `height`, `duration_seconds` |
 | `completeMediaUpload` | `Media.Complete` | `media()->complete` | `media.complete` | idempotent | `review_id`, `media_id` | `application_id` |
 | `deleteMedia` | `Media.Delete` | `media()->delete` | `media.delete` | idempotent | `review_id`, `media_id` | `application_id` |

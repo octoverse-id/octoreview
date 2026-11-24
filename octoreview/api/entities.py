@@ -22,6 +22,8 @@ from octoreview.media import selectors as media_selectors
 # after rc.1 (docs/spec.md section 5.3).
 SUMMARY_CACHE_CONTROL = {"Cache-Control": "private, max-age=60"}
 MAX_BATCH_IDS = 100
+# 2^53 - 1: inside the bigint column, and exact in every SDK language (JS numbers are doubles).
+MAX_STORAGE_BYTES = 2**53 - 1
 
 
 def validation_error(fields: dict) -> DomainError:
@@ -236,7 +238,9 @@ class SettingsSerializer(serializers.Serializer):
         child=serializers.ChoiceField(choices=ALL_CONTENT_TYPES), allow_null=True, allow_empty=False
     )
     moderation_mode = serializers.ChoiceField(choices=ModerationMode.choices, allow_null=True)
-    max_storage_bytes = serializers.IntegerField(min_value=0, allow_null=True)
+    max_storage_bytes = serializers.IntegerField(
+        min_value=0, max_value=MAX_STORAGE_BYTES, allow_null=True
+    )
 
     def validate_allowed_content_types(self, value):
         if value is None:

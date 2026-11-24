@@ -7,8 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `GET /reviews/{id}/media` (`listReviewMedia`) takes `limit`/`offset` and answers the
+  `{data, pagination}` envelope (`MediaList`), like every other list. It returned every
+  non-deleted row in a bare `{data}`, and `invalid` rows have no per-review bound. The SDKs page
+  `media.list` from their next release.
+
 ### Fixed
 
+- Integer inputs fit their columns: `max_storage_bytes` is at most 2^53 - 1 (exact in every SDK
+  language) and an upload intent's `position`, `width` and `height` at most 2^31 - 1. A larger
+  value is a 400 field error; it was a 500 from the database.
+- `errors.md` told callers to retry an expired local upload with the same `client_upload_id`,
+  which replays the expired row without a URL; it now says to create an intent with a new id.
+  `sdk-surface.yaml` says that `completeMediaUpload` also retries 409 `complete_in_progress` and
+  `upload_changed`, as the SDKs already do.
 - Erasure rewrites audit `actor_id` only in the erased application's rows; before, it also rewrote
   matching rows of the tenant's other applications. A self-erasure (the request's `X-Actor-ID` is
   the author) records the pseudonym as its actor instead of the raw id, and an author with audit

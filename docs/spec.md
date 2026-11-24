@@ -86,7 +86,7 @@ missing row and a row with all-null fields behave the same.
 | `max_image_bytes`, `max_video_bytes` | bigint, nullable | null = the env default; bounded by the ceilings |
 | `allowed_content_types` | JSON list, nullable | a subset of the six allowed types; null = all six |
 | `moderation_mode` | `auto_publish` \| `pre_moderation`, nullable | null = `auto_publish` |
-| `max_storage_bytes` | bigint, nullable | null = unlimited |
+| `max_storage_bytes` | bigint, nullable | null = unlimited; at most 2^53 - 1, exact in every SDK language |
 
 `PUT` requires every field; an omitted field is a 400 that lists the missing ones, and explicit
 `null` means "inherit". `GET` also returns `stored_bytes` and `reserved_bytes`, computed (section 7.6).
@@ -163,8 +163,8 @@ At most one per review (unique `review_id`). Columns: `rating`, `title`, `body`,
 | `storage_key` | the final key, set when `ready` |
 | `content_type` | one of the six allowed types |
 | `size_bytes` | bigint, at least 1 |
-| `width`, `height`, `duration_seconds` | caller-declared, untrusted hints; the server never parses them |
-| `position` | int |
+| `width`, `height`, `duration_seconds` | caller-declared, untrusted hints; the server never parses them; `width` and `height` are at most 2^31 - 1 |
+| `position` | int, at most 2^31 - 1 |
 | `client_upload_id` | optional; unique per review among non-deleted rows |
 | `upload_expires_at` | timestamp |
 | `completion_attempt_id`, `completion_lease_until` | the completion lease (section 7.4) |
@@ -404,7 +404,8 @@ The OpenAPI document is `docs/openapi.yaml`.
   already holds the id.
 - **Representation.** Every review includes `is_verified_purchase`, `version` and
   `media_version`, and embeds at most `OCTOREVIEW_LIST_MEDIA_LIMIT` (default 10) media. Past that
-  limit it sets `media_truncated: true`, and `GET /reviews/{id}/media` returns them all.
+  limit it sets `media_truncated: true`, and `GET /reviews/{id}/media` pages through them all
+  (limit/offset with the `{data, pagination}` envelope, in position order).
 
 **Media URLs in responses:**
 
@@ -1247,4 +1248,4 @@ These are values the plan left open; this file settles them.
 | Webhook headers | `X-Octoreview-Event`, `X-Octoreview-Delivery`, `X-Octoreview-Signature` |
 | `ApplicationSettings.moderation_mode` null | means `auto_publish` |
 | Initial `version` and `media_version` | 1 |
-| Embedded media cap | `OCTOREVIEW_LIST_MEDIA_LIMIT` applies to review details as well as list items (the plan named lists); `GET /reviews/{id}/media` returns the full set |
+| Embedded media cap | `OCTOREVIEW_LIST_MEDIA_LIMIT` applies to review details as well as list items (the plan named lists); `GET /reviews/{id}/media` pages through the full set |
