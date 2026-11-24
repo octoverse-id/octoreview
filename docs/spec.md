@@ -1129,7 +1129,10 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
   against next server" job skips until a previous SDK release exists.
 - **Release candidates.** rc tags (`vX.Y.Z-rc.N`) publish immutable image tags without moving
   `latest` or stable aliases. `contract-drift.yml` and `resolve-latest-tag` treat the newest rc as
-  latest until `1.0.0`.
+  latest until `1.0.0`. `v1.0.0-rc.1` was never tagged: its release merge was cut before later
+  docs fixes, so the first candidate is `v1.0.0-rc.2`, cut from `main`. Where this spec says rc.1
+  (sections 5.3, 8 and 17, and row 20 of the contradiction table), it means the first release
+  candidate.
 - **Release smoke.** Octoreview owns no cloud account and never holds an operator's credentials
   (owner decision, 2026-11-23). Before each tag, the upload flow runs against the S3 emulator in CI:
   `storage-emulators`, the `compose-quickstart` run on the `s3` profile, and each SDK's `s3`
@@ -1144,8 +1147,8 @@ entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1
     token).
   - Go: the tag is the release, and the runbook verifies it through `proxy.golang.org`.
   - PHP: Packagist, through its GitHub webhook.
-- **Migrations.** Migrations are never edited after `v1.0.0-rc.1`, and an upgrade test migrates
-  rc.N data to rc.N+1.
+- **Migrations.** Migrations are never edited after the first release candidate
+  (`v1.0.0-rc.2`), and an upgrade test migrates rc.N data to rc.N+1.
 - **Contract freeze.** `docs/openapi.yaml`, `docs/events.md` and `docs/errors.md` merge before SDK
   work depends on them (`make openapi-check`).
 
