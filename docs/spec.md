@@ -612,15 +612,20 @@ the media.
 - The row is still `pending` and the attempt id still matches.
 - The review still accepts media and the entity is active. Otherwise: 409, the row stays `pending`,
   and the final object is deleted after commit.
-- Re-count slots excluding this row, and re-check the quota when one is set.
+- Apply the current policy (6.1): the type must still be allowed and the size within the kind's
+  max. Then re-count slots excluding this row, and re-check the quota when one is set.
 - Then mark the row `ready`, set `storage_key` and `moderation_status` (4.3), bump `media_version`,
   update `ready_media_count`, and write the audit row and the `review_media.ready` event.
 - After commit, the staging object is deleted (best effort; the lifecycle rule backs it up).
 
-**Rejection.** Only a size, type, limit or quota mismatch rejects the row. The row becomes
+**Rejection.** Only a size, type, policy, limit or quota mismatch rejects the row. The row becomes
 `invalid`, both objects are deleted after commit, `review_media.invalid` is emitted, and the
 response is 422 `media_rejected` with `details.reason`, one of `size_mismatch`, `type_mismatch`,
-`over_limit` or `over_quota`.
+`type_not_allowed`, `too_large`, `over_limit` or `over_quota`.
+
+**Final objects outlive no row.** A row that is refused (409) or rejected after its bytes reached
+the final key records that key in `storage_key` until the delete after commit succeeds. A failed
+delete leaves it there for `cleanup_media` (7.7) or `DELETE`, so the object is never orphaned.
 
 **Concurrency cap.** At most `OCTOREVIEW_MAX_CONCURRENT_COMPLETIONS` (default 4) completions run
 per process; beyond that the request gets 503 `too_many_completions` with `Retry-After`. The image
@@ -706,6 +711,9 @@ and recommends a separate media host.
   so a moderator can reverse the decision.
 - `deleting` rows are retried until the delete succeeds; then the row becomes `deleted` and
   `review_media.deleted` is emitted.
+- `invalid` rows that still record a `storage_key` (7.4, a delete after commit that failed) have
+  that object deleted; the key is cleared and the row stays `invalid`. `DELETE` on such a row moves
+  it to `deleting` instead of straight to `deleted`.
 - Also sweeps local staging files by mtime (older than 1 day). Cloud staging relies on the bucket
   lifecycle rule (7.2).
 - Continues past per-object errors and exits 1, listing the failed keys on stderr.
@@ -866,7 +874,7 @@ namespace_type, namespace_id, resource_type, resource_id, request_id, data}`. Pa
 | 411 | `content_length_required` | — |
 | 413 | `upload_too_large` | `max_bytes` |
 | 416 | `range_not_satisfiable` | — |
-| 422 | `media_rejected` | `reason`: `size_mismatch` \| `type_mismatch` \| `over_limit` \| `over_quota` |
+| 422 | `media_rejected` | `reason`: `size_mismatch` \| `type_mismatch` \| `type_not_allowed` \| `too_large` \| `over_limit` \| `over_quota` |
 | 500 | `internal_error` | — |
 | 503 | `storage_unavailable` | `backend`, `operation` (`Retry-After`) |
 | 503 | `storage_credentials_expiring` | — (`Retry-After`) |

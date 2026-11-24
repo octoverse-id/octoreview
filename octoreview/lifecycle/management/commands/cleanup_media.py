@@ -9,8 +9,9 @@ from octoreview.lifecycle.media import cleanup_media
 
 class Command(BaseCommand):
     help = (
-        "Delete expired pending uploads, media of removed reviews and `deleting` retries, then "
-        "sweep orphaned staging files. Run it from a CronJob with concurrencyPolicy: Forbid."
+        "Delete expired pending uploads, media of removed reviews, `deleting` retries and the "
+        "objects of rejected uploads whose delete failed, then sweep orphaned staging files. Run "
+        "it from a CronJob with concurrencyPolicy: Forbid."
     )
 
     def handle(self, *args, **options):

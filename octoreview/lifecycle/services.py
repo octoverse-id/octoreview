@@ -192,6 +192,10 @@ def create_review(entity: Entity, data: NewReview, ctx: AuditContext) -> Review:
     mode = settings.effective_moderation_mode if settings else ModerationMode.AUTO_PUBLISH
     status = ReviewStatus.PUBLISHED if mode == ModerationMode.AUTO_PUBLISH else ReviewStatus.PENDING
     with transaction.atomic(), locked_entity(entity.id) as locked:
+        # The entity may have been deactivated since the caller resolved it; the locked row
+        # decides (docs/spec.md section 4.2).
+        if not locked.is_active:
+            raise entity_inactive(locked)
         review = Review(
             tenant_id=locked.tenant_id,
             application_id=locked.application_id,

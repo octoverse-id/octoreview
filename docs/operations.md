@@ -23,7 +23,7 @@ titles or bodies). Request logs record the route template and the request id, ne
 | `review.rejected` | same | a moderator rejected a review |
 | `media.intent` | scope, `kind`, `backend`, `size_bytes` | an upload intent created a row (not on a replay) |
 | `media.ready` | same | `complete` published a media item |
-| `media.rejected` | scope, `kind`, `backend`, `reason` | `complete` rejected the bytes: `size_mismatch`, `type_mismatch`, `over_limit` or `over_quota` |
+| `media.rejected` | scope, `kind`, `backend`, `reason` | `complete` rejected the bytes: `size_mismatch`, `type_mismatch`, `type_not_allowed`, `too_large`, `over_limit` or `over_quota` |
 | `quota.rejected` | scope, `kind`, `backend`, `stage` | the storage quota refused an upload, at `intent` (409) or `complete` (422) |
 | `storage.call` | `backend`, `operation`, `latency_ms`, `outcome` | every storage protocol call: `sign_upload`, `stat`, `read_head`, `finalize`, `delete`, `sweep_staging`, `lifecycle`. Read-URL signing is not counted (a list signs one URL per media item). |
 | `cleanup_media.deleted` | `count`, `swept`, `backend` | each `cleanup_media` run |
