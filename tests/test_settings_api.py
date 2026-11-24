@@ -102,3 +102,18 @@ def test_effective_policy_resolves_each_field(settings):
     assert policy.sources["max_image_bytes"] == "server"
     assert len(policy.allowed_content_types) == 6
     assert effective_policy(entity, None).max_images == settings.MEDIA_POLICY_DEFAULTS["max_images"]
+
+
+def test_the_storage_quota_is_bounded(api_client, headers, key):
+    """Exact in every SDK language; a larger value is a field error, not a database error."""
+
+    too_big = api_client.put(
+        URL, {**FULL, "max_storage_bytes": 2**53}, format="json", **headers(key)
+    )
+    assert too_big.status_code == 400
+    assert "max_storage_bytes" in too_big.json()["error"]["details"]["fields"]
+    largest = api_client.put(
+        URL, {**FULL, "max_storage_bytes": 2**53 - 1}, format="json", **headers(key)
+    )
+    assert largest.status_code == 200
+    assert largest.json()["data"]["max_storage_bytes"] == 2**53 - 1

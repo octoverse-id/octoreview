@@ -410,7 +410,9 @@ other call finished.
 
 **Details:** none.
 
-**Fix:** Retry the intent with the same `client_upload_id` for a fresh URL, or create a new intent.
+**Fix:** Create a new intent with a new `client_upload_id` and upload again. A retry with the old
+`client_upload_id` replays the expired row with `upload: null` (spec 7.3), and the id stays taken
+until `cleanup_media` deletes that row.
 
 **Recovery:** Not retryable with this URL.
 

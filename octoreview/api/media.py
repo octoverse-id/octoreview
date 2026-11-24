@@ -15,6 +15,7 @@ from octoreview.core.audit_context import AuditContext
 from octoreview.core.auth import has_permission, require_scopes
 from octoreview.core.errors import DomainError, json_error
 from octoreview.core.media_types import ALL_CONTENT_TYPES, KINDS
+from octoreview.core.pagination import OctoreviewLimitOffsetPagination
 from octoreview.core.responses import data_response
 from octoreview.lifecycle import media as media_lifecycle
 from octoreview.media import files, tokens
@@ -23,6 +24,7 @@ from octoreview.media.models import MediaStatus, ReviewMedia
 from octoreview.reviews import selectors as review_selectors
 
 UPLOAD_CHUNK = 1024 * 1024
+INT32_MAX = 2**31 - 1
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
@@ -38,9 +40,14 @@ class IntentSerializer(serializers.Serializer):
     content_type = serializers.ChoiceField(choices=ALL_CONTENT_TYPES)
     size_bytes = serializers.IntegerField(min_value=1)
     client_upload_id = serializers.CharField(max_length=100, required=False)
-    position = serializers.IntegerField(min_value=0, required=False, default=0)
-    width = serializers.IntegerField(min_value=1, required=False, allow_null=True)
-    height = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    # PositiveIntegerField columns are 32-bit on PostgreSQL: a larger value is a 400, not a 500.
+    position = serializers.IntegerField(min_value=0, max_value=INT32_MAX, required=False, default=0)
+    width = serializers.IntegerField(
+        min_value=1, max_value=INT32_MAX, required=False, allow_null=True
+    )
+    height = serializers.IntegerField(
+        min_value=1, max_value=INT32_MAX, required=False, allow_null=True
+    )
     duration_seconds = serializers.FloatField(min_value=0, required=False, allow_null=True)
 
     def to_internal_value(self, data):
@@ -87,8 +94,9 @@ def media_collection(request, review_id):
     if request.method == "GET":
         review = review_selectors.get_review(request, review_id)
         rows = ReviewMedia.objects.filter(review=review).exclude(status=MediaStatus.DELETED)
-        rows = rows.order_by("position", "created_at", "id")
-        return data_response([_represent(request, review, row) for row in rows])
+        paginator = OctoreviewLimitOffsetPagination()
+        page = paginator.paginate_queryset(rows.order_by("position", "created_at", "id"), request)
+        return paginator.get_paginated_response([_represent(request, review, row) for row in page])
 
     review = review_selectors.get_review(request, review_id, for_write=True)
     data = _validated(IntentSerializer, request.data)

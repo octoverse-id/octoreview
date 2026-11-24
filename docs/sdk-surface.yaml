@@ -11,7 +11,7 @@
 
 retry_classes:
   safe: A read. The SDK retries on timeouts, 503 and 429, honoring Retry-After.
-  idempotent: Repeating a success leaves the same state and answer. The SDK retries like a read.
+  idempotent: Repeating a success leaves the same state and answer. The SDK retries like a read; completeMediaUpload also retries 409 complete_in_progress and upload_changed, as its OpenAPI description says.
   keyed: Idempotent when the idempotency field is sent. The SDK generates one when the caller does not, then retries like a read.
   unsafe: Never retried automatically. After a lost response a repeat may answer 409; read the resource to learn the outcome.
 
@@ -229,7 +229,7 @@ operations:
     js: media.list
     retry: safe
     required: [review_id]
-    optional: [application_id, include_global, author_id, include_unpublished]
+    optional: [application_id, include_global, author_id, include_unpublished, limit, offset]
   - operation: createMediaUpload
     go: Media.CreateUpload
     php: media()->createUpload
