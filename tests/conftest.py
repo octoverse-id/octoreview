@@ -11,6 +11,17 @@ from rest_framework.test import APIClient
 from octoreview.service_auth.services import create_service_client_token
 
 
+@pytest.fixture(autouse=True)
+def _empty_url_cache():
+    """Each test starts with no cached read URLs (they live per process, per signing epoch)."""
+
+    from octoreview.media import url_cache
+
+    url_cache.clear()
+    yield
+    url_cache.clear()
+
+
 @pytest.fixture
 def api_client() -> APIClient:
     return APIClient()

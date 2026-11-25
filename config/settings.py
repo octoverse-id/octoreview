@@ -310,6 +310,8 @@ MEDIA_URL_TTL_SECONDS = env_int("OCTOREVIEW_MEDIA_URL_TTL_SECONDS", 900, minimum
 COMPLETE_LEASE_SECONDS = env_int("OCTOREVIEW_COMPLETE_LEASE_SECONDS", 900, minimum=30)
 MAX_CONCURRENT_COMPLETIONS = env_int("OCTOREVIEW_MAX_CONCURRENT_COMPLETIONS", 4, minimum=1)
 LIST_MEDIA_LIMIT = env_int("OCTOREVIEW_LIST_MEDIA_LIMIT", 10, minimum=1)
+# Signed read URLs cached per worker for one signing epoch (docs/spec.md section 8); 0 is off.
+MEDIA_URL_CACHE_SIZE = env_int("OCTOREVIEW_MEDIA_URL_CACHE_SIZE", 10_000, minimum=0)
 MEDIA_CORP = os.getenv("OCTOREVIEW_MEDIA_CORP", "cross-origin")
 if MEDIA_CORP not in {"cross-origin", "same-site", "same-origin"}:
     raise ImproperlyConfigured(

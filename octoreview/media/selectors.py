@@ -9,7 +9,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from octoreview.core import etags
-from octoreview.media import files
+from octoreview.media import files, url_cache
 from octoreview.media.models import VISIBLE_MODERATION, MediaStatus, ModerationStatus, ReviewMedia
 from octoreview.reviews.models import Review, ReviewStatus
 
@@ -97,6 +97,10 @@ def media_url(media: ReviewMedia, audience: str | None, *, now: datetime) -> dic
         return {"url": None}
     if audience == PUBLIC and settings.MEDIA_PUBLIC_BASE_URL:
         return {"url": f"{settings.MEDIA_PUBLIC_BASE_URL}/{media.storage_key}"}
+    cache_key = url_cache.key(media.storage_key, media.id, audience, now)
+    cached = url_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         # At least the TTL, and long enough for a body that carries an ETag (docs/spec.md 5.3).
         expires_at = files.url_expiry(etags.url_expiry_target(now))
@@ -105,7 +109,12 @@ def media_url(media: ReviewMedia, audience: str | None, *, now: datetime) -> dic
         )
     except (files.StorageError, files.CredentialsExpiring):
         return {"url": None, "url_unavailable": "signing"}
-    return {"url": url, "url_expires_at": expires_at.isoformat()}
+    result = {"url": url, "url_expires_at": expires_at.isoformat()}
+    # Only a URL that outlives its epoch may be reused within it; one capped by short-lived
+    # credentials is signed per request (docs/spec.md section 8).
+    if expires_at >= etags.url_lifetime_floor(now):
+        url_cache.put(cache_key, result)
+    return result
 
 
 def media_representation(media: ReviewMedia, review: Review, *, audience, now=None) -> dict:
