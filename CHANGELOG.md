@@ -26,6 +26,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- CI runs every job on Python 3.15, the interpreter the image has shipped since the
+  `python:3.15-slim` base (#59); `docs/deployment.md` and `docs/architecture.md` said 3.12.
+  `requires-python` stays `>=3.12`.
 - Review lists and details send `Cache-Control: private, max-age=60`, as `docs/spec.md` 5.3
   and `docs/openapi.yaml` already said.
 - A signed read URL lives for `max(now + TTL, epoch end + max(TTL/2, 60 s))`: unchanged at the

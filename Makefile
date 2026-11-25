@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-# `make check` stays toolchain-only (uv + Python 3.12, SQLite; no Docker, no network).
+# `make check` stays toolchain-only (uv + Python 3.12 or later, SQLite; no Docker, no network).
+# CI runs every job on 3.15, the interpreter the image ships.
 # `make release-check` is the full gate and needs Docker for the PostgreSQL suite.
 
 PG_CONTAINER ?= octoreview-test-postgres
