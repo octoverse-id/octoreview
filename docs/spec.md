@@ -434,9 +434,9 @@ author; on a list it is already filtered to that author.
   no URL.
   - Review lists and details hash the ordered `(id, status, version, media_version, updated_at)` of
     the page, the total count (lists), the caller's view (a `reviews:moderate` grant, the author
-    path), the signing epoch `floor(now / (TTL/2))`, the server version and every setting that shapes a
-    read URL (storage backend, TTL, media cap, public base URLs, the S3 bucket, region, endpoints
-    and addressing style; never a secret).
+    path), the signing epoch `floor(now / (TTL/2))`, the server version and every setting that
+    shapes a read URL (storage backend, TTL, media cap, public base URLs, the S3 bucket, region,
+    endpoints and addressing style; never a secret).
     `version` alone is not enough: it is the content version that guards a publish (4.4), and
     status transitions, attestation and erasure change the body without bumping it. Every review
     write saves `updated_at`, and every media write bumps `media_version`.
