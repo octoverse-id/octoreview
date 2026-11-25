@@ -296,16 +296,20 @@ paths:
     get:
       operationId: getEntityRating
       tags: [ratings]
-      summary: "The entity's rating summary. Sends `Cache-Control: private, max-age=60`."
+      summary: "The entity's rating summary, with an `ETag` (304 on `If-None-Match`)."
       parameters:
         - $ref: "#/components/parameters/TenantId"
         - $ref: "#/components/parameters/NamespaceType"
         - $ref: "#/components/parameters/NamespaceId"
         - $ref: "#/components/parameters/ApplicationIdQuery"
         - $ref: "#/components/parameters/IncludeGlobal"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: The summary.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
           content:
             application/json:
               schema:
@@ -313,6 +317,7 @@ paths:
                 required: [data]
                 properties:
                   data: { $ref: "#/components/schemas/EntityRating" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -404,7 +409,7 @@ paths:
         Another `status`, `has_pending_revision` or `media_moderation_status` needs
         `reviews:moderate`, except the author path: `author_id` with `include_unpublished=true`
         returns that author's non-removed reviews of any status. Sends
-        `Cache-Control: private, max-age=60`.
+        `Cache-Control: private, max-age=60` and an `ETag` (304 on `If-None-Match`).
       parameters:
         - $ref: "#/components/parameters/TenantId"
         - $ref: "#/components/parameters/NamespaceType"
@@ -425,12 +430,17 @@ paths:
         - { name: sort, in: query, schema: { type: string, enum: [newest, rating], default: newest } }
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: A page of reviews with embedded media.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReviewList" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -443,7 +453,10 @@ paths:
       operationId: getReview
       tags: [reviews]
       summary: Get one review in any status.
-      description: The author path (`author_id` equal to the review's author, with `include_unpublished=true`) returns author media URLs.
+      description: |
+        The author path (`author_id` equal to the review's author, with `include_unpublished=true`)
+        returns author media URLs. Sends `Cache-Control: private, max-age=60` and an `ETag` (304
+        on `If-None-Match`).
       parameters:
         - $ref: "#/components/parameters/TenantId"
         - $ref: "#/components/parameters/NamespaceType"
@@ -452,12 +465,17 @@ paths:
         - $ref: "#/components/parameters/IncludeGlobal"
         - $ref: "#/components/parameters/AuthorId"
         - $ref: "#/components/parameters/IncludeUnpublished"
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: The review.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReviewResponse" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -958,13 +976,32 @@ components:
       required: true
       description: A signed token taken from a URL the API returned.
       schema: { type: string }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: |
+        ETags from earlier responses (a list, weak or strong, or `*`); a match answers 304.
+      schema: { type: string }
 
   headers:
     RetryAfter:
       description: Seconds to wait before retrying.
       schema: { type: integer }
+    ETag:
+      description: |
+        A strong validator; send it back as `If-None-Match`. Absent when a media URL in the body
+        could not be signed or expires too soon to outlive a revalidation (spec 5.3).
+      schema: { type: string }
+    CacheControl:
+      description: "`private, max-age=60`."
+      schema: { type: string }
 
   responses:
+    NotModified:
+      description: Unchanged since the `If-None-Match` ETag; no body.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+        Cache-Control: { $ref: "#/components/headers/CacheControl" }
     Error:
       description: Any error; see `error.code`.
       content:

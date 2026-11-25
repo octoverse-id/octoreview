@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 
+from octoreview.core import etags
 from octoreview.core.audit_context import AuditContext
 from octoreview.core.auth import has_permission, require_permission, require_scopes
 from octoreview.core.errors import DomainError, NotFoundError
@@ -147,6 +149,29 @@ def _represent(request, review: Review) -> dict:
     return _represent_page(request, [review], author_path=author_path)[0]
 
 
+def _review_etag(request, reviews, *, author_path: bool, now, count: int | None = None) -> str:
+    """The validator of a review list or detail, from the rows alone (docs/spec.md 5.3).
+
+    `version` is the content version that guards a publish; status transitions, attestation
+    and erasure change the body without bumping it, but every review write saves `updated_at`,
+    and every media write bumps `media_version` (`touch_review`). The caller's view picks the
+    media URLs; the epoch ages them.
+    """
+
+    return etags.etag(
+        "reviews",
+        etags.deployment(),
+        etags.signing_epoch(now),
+        has_permission(request, "reviews:moderate"),
+        author_path,
+        count,
+        [
+            (str(r.id), r.status, r.version, r.media_version, r.updated_at.isoformat())
+            for r in reviews
+        ],
+    )
+
+
 def review_representation(review: Review, media: dict | None = None) -> dict:
     media = media or {"media": [], "media_truncated": False}
     return {
@@ -202,8 +227,15 @@ def _resolve_entity(request, data, ctx):
 def review_collection(request):
     if request.method == "GET":
         paginator = OctoreviewLimitOffsetPagination()
-        page = paginator.paginate_queryset(selectors.list_reviews(request), request)
-        return paginator.get_paginated_response(_represent_page(request, page))
+        page = list(paginator.paginate_queryset(selectors.list_reviews(request), request))
+        now = timezone.now()
+        author_path = selectors.is_author_path(request)
+        tag = _review_etag(request, page, author_path=author_path, now=now, count=paginator.count)
+        if etags.matches(request, tag):
+            return etags.not_modified(tag)
+        data = _represent_page(request, page, author_path=author_path)
+        valid = etags.media_urls_outlive((m for review in data for m in review["media"]), now)
+        return etags.with_validators(paginator.get_paginated_response(data), tag, valid=valid)
 
     data = _validated(ReviewCreateSerializer, request.data)
     _attest_fields_need_scope(request, data)
@@ -230,7 +262,15 @@ def review_collection(request):
 @api_view(["GET", "PATCH", "DELETE"])
 def review_detail(request, review_id):
     if request.method == "GET":
-        return data_response(_represent(request, selectors.get_review(request, review_id)))
+        review = selectors.get_review(request, review_id)
+        now = timezone.now()
+        author_path = selectors.is_author_path_for(request, review)
+        tag = _review_etag(request, [review], author_path=author_path, now=now)
+        if etags.matches(request, tag):
+            return etags.not_modified(tag)
+        data = _represent_page(request, [review], author_path=author_path)[0]
+        valid = etags.media_urls_outlive(data["media"], now)
+        return etags.with_validators(data_response(data), tag, valid=valid)
     review = selectors.get_review(request, review_id, for_write=True)
     ctx = AuditContext.from_request(request)
     if request.method == "DELETE":

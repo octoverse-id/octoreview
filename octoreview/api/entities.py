@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 
+from octoreview.core import etags
 from octoreview.core.audit_context import AuditContext
 from octoreview.core.auth import require_scopes
 from octoreview.core.errors import DomainError, NotFoundError
@@ -18,9 +19,9 @@ from octoreview.entities.models import POLICY_FIELDS, Entity, ModerationMode
 from octoreview.entities.policy import ceiling_errors
 from octoreview.media import selectors as media_selectors
 
-# Summaries change only when a review moves; a short private cache is safe until ETags land
-# after rc.1 (docs/spec.md section 5.3).
-SUMMARY_CACHE_CONTROL = {"Cache-Control": "private, max-age=60"}
+# Summaries change only when a review moves: a short private cache, and on the single summary an
+# ETag over the aggregate columns (docs/spec.md section 5.3). The batch POST sends no validators.
+SUMMARY_CACHE_CONTROL = {"Cache-Control": etags.CACHE_CONTROL}
 MAX_BATCH_IDS = 100
 # 2^53 - 1: inside the bigint column, and exact in every SDK language (JS numbers are doubles).
 MAX_STORAGE_BYTES = 2**53 - 1
@@ -178,9 +179,11 @@ def entity_lookup(request):
 @api_view(["GET"])
 def entity_rating(request, entity_id):
     entity = selectors.get_visible_entity(request, entity_id)
-    return data_response(
-        {"entity_id": str(entity.id), **ratings.summary(entity)}, headers=SUMMARY_CACHE_CONTROL
-    )
+    data = {"entity_id": str(entity.id), **ratings.summary(entity)}
+    tag = etags.etag("rating", etags.deployment(), data)
+    if etags.matches(request, tag):
+        return etags.not_modified(tag)
+    return etags.with_validators(data_response(data), tag)
 
 
 class RatingsQuerySerializer(serializers.Serializer):
