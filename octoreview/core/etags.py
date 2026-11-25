@@ -54,7 +54,12 @@ def url_expiry_target(now: datetime) -> datetime:
 
 
 def deployment() -> tuple:
-    """What changes every body without touching a row: the release and the URL settings."""
+    """What changes every body without touching a row: the release and every setting that
+    shapes a read URL (a redeploy that moves the bucket or endpoint must not 304 old URLs).
+
+    Secrets stay out: the ETag is public, and a rotated token secret keeps the previous
+    secret's URLs valid (docs/operations.md).
+    """
 
     return (
         settings.SPECTACULAR_SETTINGS["VERSION"],
@@ -63,6 +68,11 @@ def deployment() -> tuple:
         settings.LIST_MEDIA_LIMIT,
         settings.MEDIA_PUBLIC_BASE_URL,
         settings.PUBLIC_BASE_URL,
+        settings.STORAGE_S3_BUCKET,
+        settings.STORAGE_S3_REGION,
+        settings.STORAGE_S3_ENDPOINT_URL,
+        settings.STORAGE_S3_PUBLIC_ENDPOINT_URL,
+        settings.STORAGE_S3_ADDRESSING_STYLE,
     )
 
 

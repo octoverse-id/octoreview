@@ -228,6 +228,23 @@ def test_a_new_signing_epoch_changes_the_etag(api_client, headers, admin, monkey
     assert detail(api_client, headers, admin, review["id"], etag=first).status_code == 200
 
 
+@pytest.mark.parametrize(
+    "setting, value",
+    [
+        ("MEDIA_PUBLIC_BASE_URL", "https://cdn.example.invalid"),
+        ("STORAGE_S3_BUCKET", "moved-bucket"),
+        ("STORAGE_S3_PUBLIC_ENDPOINT_URL", "https://s3.example.invalid"),
+        ("LIST_MEDIA_LIMIT", 3),
+    ],
+)
+def test_a_read_url_setting_changes_the_etag(api_client, headers, admin, settings, setting, value):
+    # A same-version redeploy that moves where URLs point must not 304 the old URLs.
+    review = create_review(api_client, headers, admin)
+    before = detail(api_client, headers, admin, review["id"])["ETag"]
+    setattr(settings, setting, value)
+    assert detail(api_client, headers, admin, review["id"], etag=before).status_code == 200
+
+
 # --- bodies that must not be revalidated ---------------------------------------------------------
 
 
