@@ -762,8 +762,16 @@ and recommends a separate media host.
   - `docs/operations.md` covers CDN purge after erasure, or a short CDN TTL.
 - **URL lifetime.** A read URL is signed for `max(now + TTL, epoch end + max(TTL/2, max-age))`
   (5.3), so it outlives any body whose ETag a client can still revalidate.
-- **URL cache** (after rc.1, gate d17b). Signed read URLs are cached in-process, in a bounded LRU
-  keyed by the ETag epoch. Until then, reads sign per request, bounded by the list media cap.
+- **URL cache** (gate d17b). Signed read URLs are cached in-process, in a bounded LRU per worker
+  (`OCTOREVIEW_MEDIA_URL_CACHE_SIZE`, default 10000 entries, `0` turns it off), so each media item
+  is signed at most once per signing epoch, audience and worker.
+  - The key is the deployment fingerprint (5.3), the signing epoch, the storage key, the media id
+    and the audience. The audience is decided per request before the lookup, so a visibility change
+    never reaches a URL signed for another audience; an expired cached URL is never served, because
+    every URL outlives its epoch.
+  - Only a URL that reaches the lifetime floor is cached: a signing failure (`url_unavailable`) or a
+    URL capped by short-lived credentials is signed per request. Public-CDN URLs are not signed and
+    not cached.
 - **Signing cost.** A report-only M2 measurement records signing cost per URL.
 
 ## 9. Erasure (`POST /authors/erase`, `manage.py erase_author`)
@@ -1011,6 +1019,7 @@ and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
 | `OCTOREVIEW_COMPLETE_LEASE_SECONDS` | 900 | |
 | `OCTOREVIEW_MAX_CONCURRENT_COMPLETIONS` | 4 | per process |
 | `OCTOREVIEW_LIST_MEDIA_LIMIT` | 10 | |
+| `OCTOREVIEW_MEDIA_URL_CACHE_SIZE` | 10000 | signed read URLs cached per worker for one signing epoch (8); `0` is off |
 | `OCTOREVIEW_MEDIA_CORS_ORIGINS` | empty | |
 | `OCTOREVIEW_MEDIA_CORP` | `cross-origin` | |
 | `OCTOREVIEW_DEFAULT_*`, `OCTOREVIEW_*_CEILING` | 6.1 | |

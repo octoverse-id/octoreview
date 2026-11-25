@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from octoreview.core import etags
 from octoreview.entities.ratings import Contribution, apply_delta
-from octoreview.media import files
+from octoreview.media import files, url_cache
 from octoreview.media.models import ReviewMedia
 from tests.test_media import APP, create_review, set_settings, upload
 from tests.test_ratings import make_entity
@@ -251,6 +251,7 @@ def test_a_read_url_setting_changes_the_etag(api_client, headers, admin, setting
 def test_a_body_with_an_unsigned_url_has_no_etag(api_client, headers, admin, monkeypatch):
     review = create_review(api_client, headers, admin)
     add_media(api_client, headers, admin, review)
+    url_cache.clear()  # the upload response signed and cached a good URL
 
     def failing(*args, **kwargs):
         raise files.StorageError("signing", "down")
@@ -271,6 +272,7 @@ def test_a_url_capped_below_the_floor_has_no_etag(api_client, headers, admin, mo
     add_media(api_client, headers, admin, review)
     monkeypatch.setattr(files, "url_expiry", lambda requested: timezone.now() + timedelta(hours=1))
     assert "ETag" in detail(api_client, headers, admin, review["id"])
+    url_cache.clear()  # that read cached a URL that outlives the epoch
     monkeypatch.setattr(
         files, "url_expiry", lambda requested: timezone.now() + timedelta(seconds=10)
     )

@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Signed read URLs are cached per worker for one signing epoch (#55, gate d17b,
+  `docs/spec.md` 8), so a media item is signed at most once per epoch and audience instead of
+  once per read. The key carries the deployment fingerprint, the epoch, the media and the
+  audience; the audience is still decided per request. Signing failures and URLs capped by
+  short-lived credentials are never cached. `OCTOREVIEW_MEDIA_URL_CACHE_SIZE` (default 10000
+  entries, `0` turns it off) bounds it.
 - Conditional reads (#53, gate d17b): `GET /reviews`, `GET /reviews/{id}` and
   `GET /entities/{id}/rating` send a strong `ETag` and answer `If-None-Match` with
   `304 Not Modified`. A 304 runs no media query and signs no URL. The review ETag hashes each
