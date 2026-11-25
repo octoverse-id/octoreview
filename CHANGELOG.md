@@ -7,6 +7,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Conditional reads (#53, gate d17b): `GET /reviews`, `GET /reviews/{id}` and
+  `GET /entities/{id}/rating` send a strong `ETag` and answer `If-None-Match` with
+  `304 Not Modified`. A 304 runs no media query and signs no URL. The review ETag hashes each
+  row's `(id, status, version, media_version, updated_at)`, the list count, the caller's view
+  and the signing epoch: `version` alone misses status transitions, attestation and erasure. A
+  body whose media URL could not be signed, or expires too soon to outlive a revalidation,
+  carries no `ETag`. The batch `POST /entities/ratings/query` sends no validators. The SDKs
+  have sent `If-None-Match` since `0.1.0`.
+
+### Changed
+
+- Review lists and details send `Cache-Control: private, max-age=60`, as `docs/spec.md` 5.3
+  and `docs/openapi.yaml` already said.
+- A signed read URL lives for `max(now + TTL, epoch end + max(TTL/2, 60 s))`: unchanged at the
+  default TTL of 900 seconds, slightly longer when `OCTOREVIEW_MEDIA_URL_TTL_SECONDS` is under
+  120, so a body that can still be revalidated never holds an expired URL.
+
 ## [1.0.0-rc.3] - 2026-11-25
 
 ### Changed

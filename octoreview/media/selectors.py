@@ -8,6 +8,7 @@ from django.conf import settings
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from octoreview.core import etags
 from octoreview.media import files
 from octoreview.media.models import VISIBLE_MODERATION, MediaStatus, ModerationStatus, ReviewMedia
 from octoreview.reviews.models import Review, ReviewStatus
@@ -97,7 +98,8 @@ def media_url(media: ReviewMedia, audience: str | None, *, now: datetime) -> dic
     if audience == PUBLIC and settings.MEDIA_PUBLIC_BASE_URL:
         return {"url": f"{settings.MEDIA_PUBLIC_BASE_URL}/{media.storage_key}"}
     try:
-        expires_at = files.url_expiry(now + timedelta(seconds=settings.MEDIA_URL_TTL_SECONDS))
+        # At least the TTL, and long enough for a body that carries an ETag (docs/spec.md 5.3).
+        expires_at = files.url_expiry(etags.url_expiry_target(now))
         url = files.download_url(
             media.storage_key, media_id=media.id, audience=audience, expires_at=expires_at
         )

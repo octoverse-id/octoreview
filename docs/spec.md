@@ -424,15 +424,27 @@ author; on a list it is already filtered to that author.
 
 ### 5.3 Caching
 
-- **Until `v1.0.0-rc.1`:** rating summaries, batch summaries and review lists and details send
+- Rating summaries, batch summaries and review lists and details send
   `Cache-Control: private, max-age=60` and
-  `Vary: Authorization, X-Tenant-ID, X-Namespace-Type, X-Namespace-ID`, with no `ETag`.
-- **After rc.1 and before `v1.0.0`** (gate d17b), GET responses gain `ETag` and honor
-  `If-None-Match` with 304:
-  - Review lists and details hash the ordered `(id, version, media_version)` of the page, the total
-    count and the signing epoch `floor(now / (TTL/2))`.
-  - Rating summaries hash the aggregate columns.
+  `Vary: Authorization, X-Tenant-ID, X-Namespace-Type, X-Namespace-ID`.
+- **Validators** (gate d17b, after rc.1 and before `v1.0.0`). Review lists and details and the
+  single rating summary send a strong `ETag` and answer `If-None-Match` (weak comparison, a list or
+  `*`) with `304 Not Modified`, which repeats the `ETag` and `Cache-Control` and has no body. The
+  ETag is computed from the rows the view already loaded, so a 304 runs no media query and signs
+  no URL.
+  - Review lists and details hash the ordered `(id, status, version, media_version, updated_at)` of
+    the page, the total count (lists), the caller's view (a `reviews:moderate` grant, the author
+    path), the signing epoch `floor(now / (TTL/2))`, the server version and the read-URL settings.
+    `version` alone is not enough: it is the content version that guards a publish (4.4), and
+    status transitions, attestation and erasure change the body without bumping it. Every review
+    write saves `updated_at`, and every media write bumps `media_version`.
+  - Rating summaries hash the entity id and the aggregate columns.
   - The batch POST never sends validators.
+  - A body gets no `ETag` when a URL in it could not be signed (`url_unavailable`), or expires
+    before the epoch end plus `max(TTL/2, max-age)`: a 304 can come up to the epoch end, and the
+    client may reuse the body for `max-age` after it. Read URLs are signed for
+    `max(now + TTL, epoch end + max(TTL/2, max-age))`, which is the TTL unless TTL < 120 seconds;
+    short-lived storage credentials can still cap it (7.8), and then the body is not validated.
 - **SDKs:** they ship conditional reads (`ifNoneMatch`, a typed not-modified result) from `0.1.0`,
   so turning ETags on is additive.
 - **Signed URLs vs page caching:** cached pages should use public-CDN mode (section 8).
@@ -746,9 +758,10 @@ and recommends a separate media host.
   - Hidden or rejected objects stay reachable by URL until they are deleted.
   - Public-CDN keys expose tenant and application ids.
   - `docs/operations.md` covers CDN purge after erasure, or a short CDN TTL.
+- **URL lifetime.** A read URL is signed for `max(now + TTL, epoch end + max(TTL/2, max-age))`
+  (5.3), so it outlives any body whose ETag a client can still revalidate.
 - **URL cache** (after rc.1, gate d17b). Signed read URLs are cached in-process, in a bounded LRU
-  keyed by the ETag epoch. A URL stays valid at least until the epoch end plus max(TTL/2,
-  `max-age`). Until then, reads sign per request, bounded by the list media cap.
+  keyed by the ETag epoch. Until then, reads sign per request, bounded by the list media cap.
 - **Signing cost.** A report-only M2 measurement records signing cost per URL.
 
 ## 9. Erasure (`POST /authors/erase`, `manage.py erase_author`)
@@ -1199,7 +1212,7 @@ attempt-key fallback for stores without conditional copy (PLT-14). See
 | 16 | Local token checks | every use re-checks the row (Eng S1); re-check only revocation (Eng R16) | per-audience revocation (Eng C4) |
 | 17 | Author path | `author_id` filter alone shows any status (CEO) | needs `include_unpublished=true` (Eng R24-R27) |
 | 18 | Batch summaries caching | ETag and 304 (CEO) | `Cache-Control` only, no validators (Eng E5) |
-| 19 | ETag input | hash(data version, epoch) (Eng E5); `(id, version, updated_at)` (Eng R20) | ordered `(id, version, media_version)` + total count + epoch (Eng N6) |
+| 19 | ETag input | hash(data version, epoch) (Eng E5); `(id, version, updated_at)` (Eng R20); ordered `(id, version, media_version)` + total count + epoch (Eng N6) | ordered `(id, status, version, media_version, updated_at)` + total count + caller view + epoch (#53: `version` misses status transitions, attestation and erasure) |
 | 20 | ETag, URL cache and bench timing | before `v1.0.0-rc.1` | after rc.1, before `v1.0.0` (gate d17b) |
 | 21 | Cross-Origin-Resource-Policy | `same-site` (Eng S6) | configurable, default `cross-origin` (Eng R17) |
 | 22 | SDK upload entry points | `media.upload(reviewId, file\|stream\|bytes)` (base), `media.upload(reviewId, path)` (DX) | `media.uploadFile` / `uploadBytes` / `uploadStream` (Eng H3) |
