@@ -1061,8 +1061,17 @@ These are [estimated, re-measure] values.
 - Intent p95 < 100 ms.
 - Complete p95 < 3 s for a 10 MiB image.
 
-Query-count budgets (`django_assert_max_num_queries`) are the CI gate. `scripts/bench.py` (1k
-entities, 10k reviews, p50/p95 per endpoint) is report-only and lands after rc.1 (gate d17b).
+Query-count budgets (`django_assert_max_num_queries`) are the CI gate. `scripts/bench.py` (gate
+d17b) is report-only: it prints p50/p95 per endpoint against these budgets and never fails on one.
+- `make bench` (SQLite) and `make bench-postgres` (a throwaway PostgreSQL 17 container) seed 1k
+  entities and 10k reviews, plus a page of 20 reviews with three images each. The script creates
+  and drops its own database and a temporary media root on `local`, so it never touches real data.
+- It times requests in-process, through the middleware, auth, DRF and the ORM, with request logging
+  off; network and gunicorn time are not included. Besides the budgets it reports the rating
+  summary, the review detail, the newest page of all reviews, and the budgeted list with a warm URL
+  cache and as a 304.
+- It exits 1 only when a request answers unexpectedly, so a broken bench never reads as a fast one;
+  `tests/test_bench.py` runs it with tiny numbers in `make check`.
 
 ## 18. SDK contract (Go, PHP, JavaScript)
 

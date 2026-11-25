@@ -9,6 +9,8 @@ PG_CONTAINER ?= octoreview-test-postgres
 PG_PORT ?= 55432
 PG_URL ?= postgres://postgres:postgres@localhost:$(PG_PORT)/octoreview
 PYTEST_SETTINGS := DJANGO_SETTINGS_MODULE=config.settings_pytest
+# `make bench-postgres` gets its own container and port, so it can run beside test-postgres.
+PG_BENCH_PORT ?= 55434
 # The S3-compatible emulator for `make test-storage` (docs/storage.md, "Emulator").
 S3_CONTAINER ?= octoreview-test-s3
 S3_PORT ?= 59000
@@ -43,6 +45,13 @@ test: ## Run the test suite on SQLite
 test-postgres: ## Run the test suite on PostgreSQL in Docker (needs Docker)
 	@command -v docker >/dev/null || { echo "test-postgres needs Docker; install it or use make test" >&2; exit 1; }
 	@./scripts/test-postgres.sh $(PG_CONTAINER) $(PG_PORT) $(PG_URL)
+
+bench: ## Report-only latency bench on SQLite (docs/spec.md section 17; BENCH_ARGS=--help)
+	$(PYTEST_SETTINGS) uv run python scripts/bench.py $(BENCH_ARGS)
+
+bench-postgres: ## The latency bench on a throwaway PostgreSQL 17 container (needs Docker)
+	@command -v docker >/dev/null || { echo "bench-postgres needs Docker; install it or use make bench" >&2; exit 1; }
+	@$(PYTEST_SETTINGS) ./scripts/test-postgres.sh $(PG_CONTAINER)-bench $(PG_BENCH_PORT) postgres://postgres:postgres@localhost:$(PG_BENCH_PORT)/octoreview uv run python scripts/bench.py $(BENCH_ARGS)
 
 test-storage: ## Run the S3 tests and check_storage against an S3-compatible emulator (needs Docker)
 	@command -v docker >/dev/null || { echo "test-storage needs Docker; install it" >&2; exit 1; }
@@ -113,4 +122,4 @@ export-rulesets: ## Export the live rulesets into .github/rulesets/ (needs gh wi
 
 .PHONY: help install lint format checks test test-postgres test-storage docker-build docker-smoke \
 	up up-s3 down dev-env quickstart compose-quickstart seed version-check security llms-check actionlint \
-	placeholder-check check release-check export-rulesets
+	placeholder-check check release-check export-rulesets bench bench-postgres
