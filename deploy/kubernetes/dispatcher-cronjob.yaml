@@ -37,7 +37,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: dispatcher
-              image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.2
+              image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.3
               # `args`, not `command`: the image entrypoint still runs `manage.py check` first.
               # No --retry-failed: that is the operator's dead-letter replay (docs/operations.md).
               args: ["python", "manage.py", "dispatch_outbox_events", "--limit", "100"]

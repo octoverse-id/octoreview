@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] - 2026-11-25
+
 ### Changed
 
 - Write-side queries name the tenant: the row-lock helpers, the review and media services, the
