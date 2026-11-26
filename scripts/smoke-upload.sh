@@ -82,9 +82,11 @@ api create_upload POST "/reviews/$review_id/media?application_id=$app" \
   "{\"kind\": \"image\", \"content_type\": \"image/png\", \"size_bytes\": $size}"
 media_id=$(field 'd["data"]["media"]["id"]')
 upload_url=$(field 'd["data"]["upload"]["url"]')
-mapfile -t upload_headers < <(field '"\n".join(f"{k}: {v}" for k, v in d["data"]["upload"]["headers"].items())')
 put_args=(-sS -o "$work/body" -w '%{http_code}' -X PUT --data-binary "@$work/photo.png")
-for header in "${upload_headers[@]}"; do put_args+=(-H "$header"); done
+# A read loop for bash 3.2 (stock macOS); put_args is never empty, so set -u holds on bash < 4.4.
+while IFS= read -r header; do
+  if [ -n "$header" ]; then put_args+=(-H "$header"); fi
+done < <(field '"\n".join(f"{k}: {v}" for k, v in d["data"]["upload"]["headers"].items())')
 status=$(curl "${put_args[@]}" "$upload_url") || status=000
 if [ "${status:0:1}" != 2 ]; then
   echo "smoke-upload: FAILED at upload_put (HTTP $status from the upload URL's host)" >&2

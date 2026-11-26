@@ -88,6 +88,15 @@ def test_seed_writes_the_dev_env_file_and_is_idempotent(debug, tmp_path):
     assert ServiceClient.objects.filter(is_active=True).count() == 1
 
 
+@pytest.mark.parametrize(("flags", "hint"), [((), False), (("--copy-hint",), True)])
+def test_the_copy_hint_is_only_for_the_compose_stack(debug, tmp_path, flags, hint):
+    # compose-start.sh passes --copy-hint; `make run` writes the file in place and does not.
+    path = tmp_path / ".octoreview-dev.env"
+    out = seed("--dev-env", str(path), *flags)
+    assert f"seed: wrote {path}" in out
+    assert ("make dev-env" in out) is hint
+
+
 def test_a_lost_dev_env_file_rotates_the_key(debug, tmp_path):
     path = tmp_path / ".octoreview-dev.env"
     seed("--dev-env", str(path))

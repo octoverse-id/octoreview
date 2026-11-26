@@ -991,10 +991,16 @@ The compose stack (`compose.yaml`; `make up`, or `make up-s3` for the `s3` profi
 emulator) migrates on start and seeds idempotently when `OCTOREVIEW_DEMO_SEED=1` and DEBUG is on,
 and the backend is `local` or an emulator (`seed` refuses a real AWS bucket):
 - It writes `.octoreview-dev.env` (`OCTOREVIEW_BASE_URL`, `OCTOREVIEW_API_KEY`,
-  `OCTOREVIEW_TENANT_ID`, `OCTOREVIEW_APPLICATION_ID`) into a named volume, and `make dev-env`
-  copies it out as the invoking user.
+  `OCTOREVIEW_TENANT_ID`, `OCTOREVIEW_APPLICATION_ID`) into a named volume (`seed --dev-env
+  --copy-hint`). `make up` and `make up-s3` end by copying it out as the invoking user;
+  `make dev-env` copies it again.
+- Its ports listen on `${OCTOREVIEW_BIND:-127.0.0.1}`, and its base URLs name `127.0.0.1`.
 - When that file is gone but the database persists, the seed rotates the demo key.
 - The file is git-ignored.
+
+`make run` serves without Docker on `127.0.0.1` (SQLite, the `local` backend, DEBUG on). It
+migrates, then writes the same file in place through `seed --dev-env .octoreview-dev.env`.
+`PORT` and `DATABASE_URL` change only on the make command line, never from the shell.
 
 ## 15. Configuration
 

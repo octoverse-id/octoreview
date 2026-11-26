@@ -15,7 +15,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_GENERATOR = 'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+SECRET_GENERATOR = 'python3 -c "import secrets; print(secrets.token_urlsafe(48))"'
 
 
 def env_bool(name: str, default: bool = False) -> bool:

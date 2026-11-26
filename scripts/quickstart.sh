@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # The curl quickstart (README; CI `compose-quickstart`): create a review, upload a photo through
 # intent, PUT and complete, then read the rating summary and fetch the photo URL.
-# Usage: scripts/quickstart.sh [path/to/.octoreview-dev.env]   (make dev-env writes it)
+# Usage: scripts/quickstart.sh [path/to/.octoreview-dev.env]   (make up or make run writes it)
 # Names the failed step and its request id; never prints the key.
 set -euo pipefail
 env_file=${1:-.octoreview-dev.env}
-[ -f "$env_file" ] || { echo "quickstart: $env_file is missing; run make dev-env" >&2; exit 1; }
+if [ ! -f "$env_file" ]; then
+  echo "quickstart: $env_file is missing; with Docker run make up, without Docker start make run (both write it)" >&2
+  exit 1
+fi
 # shellcheck disable=SC1090
 . "$env_file"
 base=$OCTOREVIEW_BASE_URL
@@ -15,7 +18,12 @@ trap 'rm -rf "$work"' EXIT
 
 fail() {
   echo "quickstart: FAILED at $1 (HTTP $2, request id $3)" >&2
-  sed -e 's/^/  /' "$work/body" >&2 || true
+  # awk, not sed: it ends the last line of a body without a newline, so the hint starts on its own.
+  awk '{ print "  " $0 }' "$work/body" >&2 || true
+  if [ "$2" = 401 ]; then
+    # Each path has its own database, so a key seeded by one is unknown to the other.
+    echo "quickstart: the key in $env_file is not live on $base; with Docker run make dev-env, without Docker restart make run" >&2
+  fi
   exit 1
 }
 
@@ -55,9 +63,12 @@ api create_upload POST "/reviews/$review_id/media?application_id=$app" \
   "{\"kind\": \"image\", \"content_type\": \"image/png\", \"size_bytes\": $size}"
 media_id=$(field 'd["data"]["media"]["id"]')
 upload_url=$(field 'd["data"]["upload"]["url"]')
-mapfile -t upload_headers < <(field '"\n".join(f"{k}: {v}" for k, v in d["data"]["upload"]["headers"].items())')
 put_args=(-sS -o "$work/body" -w '%{http_code}' -X PUT --data-binary "@$work/photo.png")
-for header in "${upload_headers[@]}"; do put_args+=(-H "$header"); done
+# A read loop, because stock macOS ships bash 3.2. The headers go straight into put_args, which
+# is never empty, so no empty array is expanded under set -u (bash before 4.4 refuses that).
+while IFS= read -r header; do
+  if [ -n "$header" ]; then put_args+=(-H "$header"); fi
+done < <(field '"\n".join(f"{k}: {v}" for k, v in d["data"]["upload"]["headers"].items())')
 status=$(curl "${put_args[@]}" "$upload_url")
 [ "${status:0:1}" = 2 ] || fail upload_put "$status" "-"
 
