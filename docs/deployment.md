@@ -10,7 +10,7 @@ Build it with `make docker-build` (tag `octoreview:local`). Published images arr
 publish workflow (epic #3). For development, `compose.yaml` runs the image with PostgreSQL
 (README "Quickstart"); it turns DEBUG on and is not a deployment template.
 
-- Python 3.12 slim, pinned by digest; the locked runtime dependencies plus every storage extra;
+- Python 3.15 slim, pinned by digest; the locked runtime dependencies plus every storage extra;
   no dev tools.
 - Runs as the unprivileged user `app` (uid and gid 1001). The source under `/app` is read-only to
   it; `/var/lib/octoreview/media` is the only path it writes.
