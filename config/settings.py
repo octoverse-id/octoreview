@@ -173,7 +173,7 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Octoreview API",
-    "VERSION": "1.0.0-rc.3",
+    "VERSION": "1.0.0-rc.4",
     "SERVE_INCLUDE_SCHEMA": False,
 }
 

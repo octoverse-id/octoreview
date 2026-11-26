@@ -828,7 +828,7 @@ wheels = [
 
 [[package]]
 name = "octoreview"
-version = "1.0.0rc3"
+version = "1.0.0rc4"
 source = { virtual = "." }
 dependencies = [
     { name = "dj-database-url" },

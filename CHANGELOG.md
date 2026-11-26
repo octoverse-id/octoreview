@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-11-26
+
 ### Added
 
 - `scripts/bench.py`, `make bench` and `make bench-postgres` (#57, gate d17b, `docs/spec.md`
