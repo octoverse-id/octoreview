@@ -7,9 +7,32 @@ from pathlib import Path
 import pytest
 
 
+def readme(image="1.0.0", branch="1.0.0") -> str:
+    """A README with the install steps the version gate reads; None leaves a part out."""
+
+    text = "# Octoreview\n\nInstall:\n\n"
+    if image is not None:
+        text += f"    docker pull ghcr.io/octoverse-id/octoreview:{image}\n"
+    if branch is not None:
+        text += (
+            f"    git clone --depth 1 --branch v{branch} https://example.invalid/octoreview.git\n"
+        )
+    return text
+
+
+DEFAULT = object()
+
+
 @pytest.fixture
 def tree(tmp_path):
-    def build(pyproject="1.0.0rc1", openapi="1.0.0-rc.1", settings="1.0.0-rc.1", heading=True):
+    def build(
+        pyproject="1.0.0rc1",
+        openapi="1.0.0-rc.1",
+        settings="1.0.0-rc.1",
+        heading=True,
+        final=None,
+        readme_text=DEFAULT,
+    ):
         (tmp_path / "docs").mkdir(exist_ok=True)
         (tmp_path / "config").mkdir(exist_ok=True)
         (tmp_path / "pyproject.toml").write_text(f'[project]\nversion = "{pyproject}"\n')
@@ -22,7 +45,15 @@ def tree(tmp_path):
         changelog = "# Changelog\n\n## [Unreleased]\n"
         if heading:
             changelog += f"\n## [{openapi}] - 2026-11-20\n"
+        if final:
+            changelog += f"\n## [{final}] - 2026-11-01\n"
         (tmp_path / "CHANGELOG.md").write_text(changelog)
+        # By default the README names the tree's version without its -rc.N suffix.
+        if readme_text is DEFAULT:
+            version = openapi.split("-")[0]
+            readme_text = readme(version, version)
+        if readme_text is not None:
+            (tmp_path / "README.md").write_text(readme_text)
         return str(tmp_path)
 
     return build
@@ -74,3 +105,87 @@ def test_deploy_image_tags_must_name_the_version(run_script, tree, tag, passes):
     assert (result.returncode == 0) is passes, result.output
     if not passes:
         assert "deploy/ references ghcr.io/octoverse-id/octoreview:1.0.0-rc.0" in result.stdout
+
+
+FINAL = {"pyproject": "1.0.0", "openapi": "1.0.0", "settings": "1.0.0"}
+CANDIDATE = {"pyproject": "1.0.1rc1", "openapi": "1.0.1-rc.1", "settings": "1.0.1-rc.1"}
+
+
+@pytest.mark.parametrize(
+    ("case", "stamps", "readme_text", "code", "message"),
+    [
+        ("final, all match", FINAL, readme(), 0, "version-check OK (1.0.0)"),
+        (
+            "final, stale image",
+            FINAL,
+            readme(image="0.9.9"),
+            1,
+            "FAIL  README.md:5 references ghcr.io/octoverse-id/octoreview:0.9.9, not 1.0.0",
+        ),
+        (
+            "final, stale --branch",
+            FINAL,
+            readme(branch="0.9.9"),
+            1,
+            "FAIL  README.md:6 references --branch v0.9.9, not 1.0.0",
+        ),
+        (
+            "final, no --branch",
+            FINAL,
+            readme(branch=None),
+            1,
+            "FAIL  README.md has no --branch v1.0.0 clone",
+        ),
+        (
+            "final, no image",
+            FINAL,
+            readme(image=None),
+            1,
+            "FAIL  README.md has no image reference",
+        ),
+        ("final, no README", FINAL, None, 2, "version-check: could not read README.md"),
+        (
+            "rc, README at the last final",
+            {**CANDIDATE, "final": "1.0.0"},
+            readme(),
+            0,
+            "NOTE  release candidate: README.md must name the last final release, 1.0.0",
+        ),
+        (
+            "rc, README at the rc",
+            {**CANDIDATE, "final": "1.0.0"},
+            readme(image="1.0.1-rc.1"),
+            1,
+            "references ghcr.io/octoverse-id/octoreview:1.0.1-rc.1, not 1.0.0",
+        ),
+        (
+            "rc, README at latest",
+            {**CANDIDATE, "final": "1.0.0"},
+            readme(image="latest"),
+            1,
+            "references ghcr.io/octoverse-id/octoreview:latest, not 1.0.0",
+        ),
+        (
+            "rc, no final release yet",
+            CANDIDATE,
+            readme(image="0.0.1"),
+            0,
+            "NOTE  README.md not checked: CHANGELOG.md has no final release yet",
+        ),
+        (
+            "final, tag at the end of a sentence",
+            FINAL,
+            "Pull `ghcr.io/octoverse-id/octoreview:1.0.0`, or see octoreview:1.0.0.\n"
+            "Or ghcr.io/octoverse-id/octoreview:1.0.0.\n"
+            "git clone --branch v1.0.0.\n",
+            0,
+            "version-check OK (1.0.0)",
+        ),
+    ],
+)
+def test_readme_names_the_release(run_script, tree, case, stamps, readme_text, code, message):
+    result = run_script("version-check.sh", tree(**stamps, readme_text=readme_text))
+    assert result.returncode == code, f"{case}: {result.output}"
+    assert message in result.output, f"{case}: {result.output}"
+    if code == 0:
+        assert "FAIL" not in result.stdout, f"{case}: {result.output}"

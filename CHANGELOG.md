@@ -26,6 +26,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   key is not live on that server.
 - `seed --dev-env` prints the `make dev-env` copy hint only with `--copy-hint`, which the compose
   stack passes (#69). The secret generator hint says `python3`.
+- `make version-check` also reads `README.md` (#69). For a final release, its image tags and its
+  `--branch v<version>` clone must name the release. For a release candidate, they must name the
+  newest final release in `CHANGELOG.md`. Tags are captured up to their last letter or digit, so
+  a sentence period is not part of a tag. `docs/release.md` gains a check after publish.
 
 ## [1.0.0] - 2026-11-26
 

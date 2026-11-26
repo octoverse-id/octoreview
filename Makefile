@@ -146,7 +146,7 @@ llms-check: ## Fail when llms.txt links a missing local path (and prove the chec
 actionlint: ## Lint GitHub Actions workflows (needs actionlint on PATH)
 	@actionlint -color
 
-version-check: ## Fail unless pyproject, openapi.yaml, settings and a CHANGELOG heading name one version
+version-check: ## Fail unless pyproject, openapi.yaml, settings, CHANGELOG, deploy/ and README image tags agree
 	@./scripts/version-check.sh
 
 placeholder-check: ## Fail while any bootstrap CI placeholder job remains
