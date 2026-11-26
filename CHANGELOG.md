@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `scripts/bench.py`, `make bench` and `make bench-postgres` (#57, gate d17b, `docs/spec.md`
+  17): a report-only latency bench that seeds 1k entities and 10k reviews in its own throwaway
+  database, then prints p50/p95 per endpoint against the spec's budgets (batch summaries, the
+  review list with media, intent, a 10 MiB complete). It also reports the list with a warm URL
+  cache and as a 304. It never fails on a budget, only on an unexpected answer.
 - Signed read URLs are cached per worker for one signing epoch (#55, gate d17b,
   `docs/spec.md` 8), so a media item is signed at most once per epoch and audience instead of
   once per read. The key carries the deployment fingerprint, the epoch, the media and the
