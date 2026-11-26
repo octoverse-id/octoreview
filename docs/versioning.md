@@ -4,9 +4,12 @@ Octoreview follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## Release line policy
 
-The server ships `1.0.0-rc.N` tags until a production integration on the `s3` backend
-passes, then `1.0.0`. Release candidates publish immutable image tags without moving
-`latest` or stable aliases.
+The server shipped `1.0.0-rc.N` tags (`rc.2` to `rc.4`; `rc.1` was never tagged), then `1.0.0`.
+The owner cut `1.0.0` on 2026-11-26 on the CI evidence (the storage emulators and each SDK's `s3`
+integration run) instead of waiting for a production integration on a real `s3` account, so AWS
+S3 is "beta" in `1.0.0` until an operator's run passes (`docs/release.md`, "Operator smoke
+runs"). Release candidates publish immutable image tags without moving `latest` or stable
+aliases.
 
 ## Image tags
 

@@ -13,8 +13,8 @@ lists the values the plan left open that this file settles.
 Release lines:
 
 - **Line 1**: this server with the `local` and `s3` (AWS S3 and S3-compatible) storage backends,
-  and the Go, PHP and JavaScript SDKs. Server `1.0.0-rc.N` until a production integration on the
-  `s3` backend passes, then `1.0.0`; SDKs `0.x`.
+  and the Go, PHP and JavaScript SDKs. Server `1.0.0-rc.N`, then `1.0.0`, cut on the CI evidence
+  without waiting for a production integration (section 19); SDKs `0.x`.
 - **Line 2**: Azure Blob and native GCS backends, each "beta" until an operator's smoke run on its
   own account passes (section 19). The contract in this file is frozen in line 1 for every backend,
   so line 2 adds no breaking change.
@@ -1186,9 +1186,9 @@ d17b) is report-only: it prints p50/p95 per endpoint against these budgets and n
   integration run. Real-cloud evidence comes from an operator: someone running Octoreview on their
   own infrastructure runs `manage.py check_storage`, `scripts/smoke-upload.sh` and the browser
   hand-off from their storefront origin against their own bucket. They report the outcome and the
-  request ids, never keys, and a maintainer records them on the release issue (`docs/release.md`). A
-  backend stays "beta" until one operator run on a real account passes; for AWS S3 that is the
-  production integration that gates `1.0.0`.
+  request ids, never keys, in a GitHub issue (`docs/release.md`). A backend stays "beta" until one
+  operator run on a real account passes. `1.0.0` did not wait for one: the owner cut it on the CI
+  evidence (2026-11-26), so AWS S3 is "beta" in `1.0.0`.
 - **Publishing.**
   - npm publishes from CI through npm trusted publishing (OIDC, `--provenance`, no long-lived
     token).
