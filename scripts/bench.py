@@ -81,6 +81,35 @@ class Result:
         }
 
 
+class Retry(Exception):
+    """The round crossed a boundary (a new signing epoch); it runs again, unrecorded."""
+
+
+def timed(result: Result, rounds: int, run, prepare=None) -> Result:
+    """Record `rounds` timings of `run(prepare())`, after one unrecorded warm-up round.
+
+    A round that raises Retry runs again and is not recorded; more retries than rounds means
+    the server keeps answering unexpectedly, which fails the bench.
+    """
+
+    warmed, retries = False, 0
+    while len(result.samples) < rounds:
+        state = prepare() if prepare else None
+        started = time.perf_counter()
+        try:
+            run(state)
+        except Retry:
+            retries += 1
+            if retries > rounds:
+                raise BenchError(f"{result.name}: {retries} rounds had to be retried") from None
+            continue
+        elapsed = (time.perf_counter() - started) * 1000
+        if warmed:
+            result.samples.append(elapsed)
+        warmed = True
+    return result
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--entities", type=int, default=1000)
@@ -262,17 +291,10 @@ class Bench:
 
     # --- timing -----------------------------------------------------------------------------
 
-    def timed(self, result: Result, rounds: int, run, prepare=None) -> Result:
-        for i in range(rounds + 1):  # round 0 warms up and is not recorded
-            state = prepare() if prepare else None
-            started = time.perf_counter()
-            run(state)
-            elapsed = (time.perf_counter() - started) * 1000
-            if i:
-                result.samples.append(elapsed)
-        return result
-
     def run(self) -> list[Result]:
+        from django.utils import timezone
+
+        from octoreview.core import etags
         from octoreview.media import url_cache
 
         n = self.args.iterations
@@ -286,11 +308,11 @@ class Bench:
             body = {"application_id": APP, "entity_type": "product", "external_ids": ids}
             self.call("batch", 200, "POST", "/api/v1/entities/ratings/query", self.reader, body)
 
-        results.append(self.timed(Result("batch summaries, 100 ids", budget_ms=50), n, batch))
+        results.append(timed(Result("batch summaries, 100 ids", budget_ms=50), n, batch))
 
         rating = f"/api/v1/entities/{self.rated_entity}/rating?application_id={APP}"
         results.append(
-            self.timed(
+            timed(
                 Result("rating summary"),
                 n,
                 lambda _: self.call("rating", 200, "GET", rating, self.reader),
@@ -303,27 +325,39 @@ class Bench:
                 raise BenchError("the budgeted page does not hold 20 reviews")
 
         results.append(
-            self.timed(
+            timed(
                 Result("review list, 20 with media, cold URL cache", budget_ms=150),
                 n,
                 listed,
                 prepare=url_cache.clear,
             )
         )
-        results.append(self.timed(Result("review list, 20 with media, warm URL cache"), n, listed))
-        etag = self.call("etag", 200, "GET", hot_list, self.reader)["ETag"]
+        results.append(timed(Result("review list, 20 with media, warm URL cache"), n, listed))
+        # The ETag carries the signing epoch (spec 5.3): a round that crosses into a new epoch
+        # gets a fresh ETag and runs again, instead of failing a healthy server's 200.
+        validator: dict = {}
+
+        def current_etag():
+            epoch = etags.signing_epoch(timezone.now())
+            if validator.get("epoch") != epoch:
+                response = self.call("etag", 200, "GET", hot_list, self.reader)
+                validator.update(epoch=epoch, etag=response["ETag"])
+            return validator["etag"]
+
+        def conditional(etag):
+            try:
+                self.call("304", 304, "GET", hot_list, self.reader, **{"If-None-Match": etag})
+            except BenchError:
+                if etags.signing_epoch(timezone.now()) != validator["epoch"]:
+                    raise Retry from None
+                raise
+
         results.append(
-            self.timed(
-                Result("review list, 20 with media, 304"),
-                n,
-                lambda _: self.call(
-                    "304", 304, "GET", hot_list, self.reader, **{"If-None-Match": etag}
-                ),
-            )
+            timed(Result("review list, 20 with media, 304"), n, conditional, prepare=current_etag)
         )
         detail = f"/api/v1/reviews/{self.hot_review}?application_id={APP}"
         results.append(
-            self.timed(
+            timed(
                 Result("review detail, 3 media"),
                 n,
                 lambda _: self.call("detail", 200, "GET", detail, self.reader),
@@ -331,7 +365,7 @@ class Bench:
         )
         newest = f"/api/v1/reviews?application_id={APP}&limit=20"
         results.append(
-            self.timed(
+            timed(
                 Result(f"review list, newest 20 of {self.args.reviews}"),
                 n,
                 lambda _: self.call("newest", 200, "GET", newest, self.reader),
@@ -340,7 +374,7 @@ class Bench:
 
         reviews = iter(self.upload_reviews)
         results.append(
-            self.timed(
+            timed(
                 Result("intent", budget_ms=100),
                 n,
                 lambda review_id: self.intent(self.admin, review_id, 1024),
@@ -357,7 +391,7 @@ class Bench:
             return review_id, created["media"]["id"]
 
         results.append(
-            self.timed(
+            timed(
                 Result(f"complete, {self.args.image_mib:g} MiB image", budget_ms=3000),
                 self.args.complete_iterations,
                 lambda state: self.complete(self.admin, *state),

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 TINY = ["--entities", "3", "--reviews", "10", "--iterations", "2", "--complete-iterations", "1"]
@@ -48,3 +51,36 @@ def test_an_unexpected_answer_fails_the_bench():
     run = bench(*TINY, "--image-mib", "20")
     assert run.returncode == 1
     assert "bench failed: intent" in run.stderr
+
+
+def load_bench():
+    spec = importlib.util.spec_from_file_location("bench", ROOT / "scripts" / "bench.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["bench"] = module  # dataclasses resolve their module while the class is built
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_retried_round_runs_again_unrecorded():
+    # A 304 round that crosses into a new signing epoch gets a fresh ETag and runs again.
+    bench = load_bench()
+    attempts = []
+
+    def run(state):
+        attempts.append(state)
+        if len(attempts) == 3:  # the warm-up, one good round, then a boundary
+            raise bench.Retry
+
+    result = bench.timed(bench.Result("304"), 3, run, prepare=lambda: len(attempts))
+    assert len(result.samples) == 3
+    assert len(attempts) == 5  # warm-up + 3 recorded + 1 retried
+
+
+def test_endless_retries_fail_the_bench():
+    bench = load_bench()
+
+    def run(_):
+        raise bench.Retry
+
+    with pytest.raises(bench.BenchError, match="had to be retried"):
+        bench.timed(bench.Result("304"), 2, run)
