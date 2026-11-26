@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `1.0.0` no longer waits for a production integration on a real `s3` account (owner decision,
+  2026-11-26). It ships on the CI evidence: the storage emulators and each SDK's `s3` integration
+  run. AWS S3 stays "beta" in `docs/storage.md` until an operator's run on their own bucket
+  passes. Operators report that run, and anything else they find, in a GitHub issue
+  (`docs/release.md`).
+
 ## [1.0.0-rc.4] - 2026-11-26
 
 ### Added

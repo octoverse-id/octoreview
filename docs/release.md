@@ -45,9 +45,10 @@ operator runs these in their own deployment, against their own bucket, with thei
 3. The browser hand-off: an upload from the storefront origin through the presigned URL, which
    proves the bucket's CORS rule.
 
-The operator sends each step's outcome and its request ids to a maintainer, who records them on
-the release issue. Keys and presigned URLs are never sent or recorded. The maintainer then changes
-the backend's status in `docs/storage.md` in a normal PR that links that record.
+The operator reports each step's outcome and its request ids in a GitHub issue (the bug report
+form will do). Keys and presigned URLs are never sent or recorded. A maintainer then changes the
+backend's status in `docs/storage.md` in a normal PR that links that issue. `1.0.0` did not wait
+for such a run (`docs/versioning.md`).
 
 ## Rehearsing a release
 
