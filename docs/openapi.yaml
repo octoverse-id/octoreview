@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Octoreview API
-  version: 1.0.0-rc.4
+  version: 1.0.0
   summary: Reviews, ratings and review media for any external entity.
   description: |
     The contract the Go, PHP and JavaScript SDKs vendor. `docs/spec.md` is the spec of record;

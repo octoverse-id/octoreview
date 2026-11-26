@@ -35,7 +35,7 @@ services:
       retries: 20
 
   migrate:
-    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.4
+    image: ghcr.io/octoverse-id/octoreview:1.0.0
     command: ["python", "manage.py", "migrate", "--noinput"]
     restart: "no"
     env_file: [.env]
@@ -44,7 +44,7 @@ services:
         condition: service_healthy
 
   app:
-    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.4
+    image: ghcr.io/octoverse-id/octoreview:1.0.0
     restart: unless-stopped
     env_file: [.env]
     ports:
@@ -73,7 +73,7 @@ services:
   # --retry-failed here: it replays dead letters (docs/operations.md). `set -e` ends the loop on
   # an unexpected failure, so the restart count shows it.
   dispatcher:
-    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.4
+    image: ghcr.io/octoverse-id/octoreview:1.0.0
     restart: unless-stopped
     command:
       ["sh", "-c", "set -e; while true; do python manage.py dispatch_outbox_events --limit 100; sleep 60; done"]
@@ -85,7 +85,7 @@ services:
   # Deletes abandoned uploads and removed or erased media every 15 minutes. A failed key exits 1;
   # the loop keeps going and the cleanup_media.failed metric reports it.
   cleanup:
-    image: ghcr.io/octoverse-id/octoreview:1.0.0-rc.4
+    image: ghcr.io/octoverse-id/octoreview:1.0.0
     restart: unless-stopped
     command: ["sh", "-c", "while true; do python manage.py cleanup_media || true; sleep 900; done"]
     env_file: [.env]

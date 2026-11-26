@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-26
+
 ### Changed
 
 - `1.0.0` no longer waits for a production integration on a real `s3` account (owner decision,
