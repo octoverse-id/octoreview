@@ -4,6 +4,6 @@
 set -e
 python manage.py migrate --noinput
 if [ "${OCTOREVIEW_DEMO_SEED:-0}" = 1 ]; then
-  python manage.py seed --dev-env /var/lib/octoreview/dev/.octoreview-dev.env
+  python manage.py seed --dev-env /var/lib/octoreview/dev/.octoreview-dev.env --copy-hint
 fi
 exec gunicorn config.wsgi:application

@@ -10,6 +10,13 @@ release workflow; until the first release it records the invariants every releas
   places that `make version-check` keeps in step: `pyproject.toml` (PEP 440, for example
   `1.0.0rc1`), `docs/openapi.yaml` `info.version`, `SPECTACULAR_SETTINGS["VERSION"]` in
   `config/settings.py`, and the CHANGELOG heading (semver, `1.0.0-rc.1`).
+- The same check covers the published image references:
+  - every `ghcr.io/octoverse-id/octoreview:<tag>` in `deploy/` names the version;
+  - for a final release, every image tag in `README.md` and its `--branch v<version>` clone name
+    the version, so the release PR updates them too;
+  - for a release candidate, `README.md` keeps naming the last final release (the newest final
+    `## [X.Y.Z]` CHANGELOG heading), so `main` points operators at a stable image while
+    `deploy/` carries the candidate. Before the first final release the README is not checked.
 - The tag `v<version>` is created on the merge commit of that PR after its CI is green.
 - Release tags never move: the `release tags: never move` ruleset rejects re-pointing or
   force-pushing a `v*` tag, admins included. Only repo admins can delete a wrong tag
@@ -32,6 +39,12 @@ release workflow; until the first release it records the invariants every releas
    `docker-smoke` on amd64), attests provenance and an SBOM per platform, verifies them, checks
    an anonymous pull and promotes the tags (`docs/versioning.md`). A failed run is re-run, never
    re-tagged: a version that is already published is re-promoted from its existing digest.
+5. For a final release, once the run is green, check the README's install steps from a machine
+   without registry credentials: `docker pull ghcr.io/octoverse-id/octoreview:<version>` and
+   `git clone --depth 1 --branch v<version> https://github.com/octoverse-id/octoreview.git`
+   both succeed. Between the release merge and a green publish, the README on `main` names a
+   version that cannot be pulled yet; when the publish refuses the tag, the release owner opens
+   the re-cut release PR the same day.
 
 ## Operator smoke runs
 

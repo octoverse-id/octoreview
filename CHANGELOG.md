@@ -7,6 +7,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `make run` (#69): the server without Docker on `127.0.0.1:8000`, on SQLite with media on the
+  `local` backend. It migrates, writes `.octoreview-dev.env` through `seed --dev-env` and serves.
+  `PORT` and `DATABASE_URL` change only on the make command line (`make run PORT=8001`), never
+  from the shell, and its banner names the database without credentials.
+
+### Changed
+
+- The dev `compose.yaml` publishes the API and RustFS ports on `127.0.0.1` (#69); set
+  `OCTOREVIEW_BIND=0.0.0.0` to publish them on the LAN. Its base URLs name `127.0.0.1` instead of
+  `localhost`.
+- `make up` and `make up-s3` end by copying `.octoreview-dev.env` out of the stack (#69), so the
+  Docker quickstart is `make up`, then `make quickstart`. `make dev-env` copies it again.
+- `scripts/quickstart.sh` and `scripts/smoke-upload.sh` run on bash 3.2 (stock macOS) (#69).
+  The quickstart names both paths when `.octoreview-dev.env` is missing, and on HTTP 401 says the
+  key is not live on that server.
+- `seed --dev-env` prints the `make dev-env` copy hint only with `--copy-hint`, which the compose
+  stack passes (#69). The secret generator hint says `python3`.
+- `make version-check` also reads `README.md` (#69). For a final release, its image tags and its
+  `--branch v<version>` clone must name the release. For a release candidate, they must name the
+  newest final release in `CHANGELOG.md`. Tags are captured up to their last letter or digit, so
+  a sentence period is not part of a tag. `docs/release.md` gains a check after publish.
+- `make checks` runs `make version-check`, and `make llms-check` also checks `README.md`'s local
+  links (#69).
+- The README is rewritten for evaluation, quickstart and installation (#69): when to use
+  Octoreview, the project status, features, the Docker quickstart with its measured time, local
+  development without Docker, troubleshooting, the single-host production install, keys and
+  tenant headers, API examples, the SDKs and a documentation index. `llms.txt` and
+  `docs/deployment.md` drop the stale status, the Azure and GCS backends and "published images
+  arrive later".
+
 ## [1.0.0] - 2026-11-26
 
 ### Changed

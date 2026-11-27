@@ -2,10 +2,11 @@
 
 Development only: it refuses unless DEBUG is on, and refuses a real AWS bucket. The key carries
 every scope. Without `--dev-env` it prints the key once with a working `curl`. With
-`--dev-env PATH` (the compose stack) it writes `.octoreview-dev.env` instead and prints only the
-path. A rerun keeps the key while the file holds a live demo key, refreshing the base URL if it
-changed (a new OCTOREVIEW_PORT); when the file is gone or its key is dead but the database
-persists, the old demo key is revoked and a new one written.
+`--dev-env PATH` (`make run`, the compose stack) it writes `.octoreview-dev.env` instead and prints
+only the path; `--copy-hint` (the compose stack) adds the `make dev-env` copy hint. A rerun keeps
+the key while the file holds a live demo key, refreshing the base URL if it changed (a new port);
+when the file is gone or its key is dead but the database persists, the old demo key is revoked
+and a new one written.
 """
 
 from __future__ import annotations
@@ -42,6 +43,11 @@ class Command(BaseCommand):
             "--dev-env",
             help="Write OCTOREVIEW_BASE_URL, OCTOREVIEW_API_KEY, OCTOREVIEW_TENANT_ID and "
             "OCTOREVIEW_APPLICATION_ID to this file instead of printing the key.",
+        )
+        parser.add_argument(
+            "--copy-hint",
+            action="store_true",
+            help="With --dev-env inside a container: say that `make dev-env` copies the file out.",
         )
 
     def handle(self, *args, **options):
@@ -82,7 +88,9 @@ class Command(BaseCommand):
         )
         if dev_env is not None:
             self._write_dev_env(dev_env, base_url, token)
-            self.stdout.write(f"seed: wrote {dev_env}; copy it out with `make dev-env`")
+            # Only the compose stack writes inside a container; `make run` writes the file in place.
+            hint = "; copy it out with `make dev-env`" if options["copy_hint"] else ""
+            self.stdout.write(f"seed: wrote {dev_env}{hint}")
             return
         self.stdout.write(
             f"Demo key for tenant {DEMO_TENANT!r}, application {DEMO_APPLICATION!r} (shown once):"

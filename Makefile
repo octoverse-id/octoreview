@@ -22,6 +22,7 @@ help: ## List available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 install: ## Install the project, dev dependencies and the s3 extra with uv
+	@command -v uv >/dev/null || { echo "make install needs uv; install it: https://docs.astral.sh/uv/" >&2; exit 1; }
 	uv sync --extra dev --extra s3
 
 lint: ## Ruff lint and format check
@@ -32,12 +33,15 @@ format: ## Apply ruff formatting and safe fixes
 	uv run ruff check --fix .
 	uv run ruff format .
 
-checks: ## Django system checks, migration drift, import layers, grep gates and the API contract
+# checks runs the version gate, so a PR that leaves a README or deploy/ image tag behind fails
+# before any tag is pushed.
+checks: ## Django system checks, migration drift, import layers, grep gates, the API contract and the version gate
 	$(PYTEST_SETTINGS) uv run python manage.py check
 	$(PYTEST_SETTINGS) uv run python manage.py makemigrations --check --dry-run
 	uv run lint-imports
 	@./scripts/check-forbidden.sh
 	@$(MAKE) --no-print-directory openapi-check
+	@$(MAKE) --no-print-directory version-check
 
 test: ## Run the test suite on SQLite
 	uv run pytest
@@ -64,20 +68,60 @@ docker-build: ## Build the server image (needs Docker)
 docker-smoke: ## Smoke-test the image named by IMAGE (default octoreview:local; needs Docker)
 	@./scripts/docker-smoke.sh $(IMAGE)
 
-up: ## Start octoreview + PostgreSQL with media on the local backend (compose; needs Docker)
+up: ## Start octoreview + PostgreSQL with media on the local backend, then copy .octoreview-dev.env out (needs Docker)
 	docker compose up -d --build --wait
+	@$(MAKE) --no-print-directory dev-env
 
-up-s3: ## Start the stack with media on the RustFS S3 emulator (compose profile s3; needs Docker)
+up-s3: ## The same with media on the RustFS S3 emulator (compose profile s3; needs Docker)
 	OCTOREVIEW_STORAGE_BACKEND=s3 docker compose --profile s3 up -d --build --wait
+	@$(MAKE) --no-print-directory dev-env
 
 down: ## Stop the compose stack (data stays; docker compose down -v drops it)
 	docker compose --profile s3 down
 
-dev-env: ## Copy .octoreview-dev.env (base URL, demo key, tenant, application) out of the stack
-	@docker compose cp octoreview:/var/lib/octoreview/dev/.octoreview-dev.env .octoreview-dev.env
+dev-env: ## Copy .octoreview-dev.env (base URL, demo key, tenant, application) out of the stack again
+	@docker compose cp octoreview:/var/lib/octoreview/dev/.octoreview-dev.env .octoreview-dev.env 2>/dev/null || \
+		{ echo "make dev-env: the stack is not running; start it with make up" >&2; exit 1; }
 	@echo "wrote .octoreview-dev.env (git-ignored; holds the demo key)"
 
-quickstart: ## Create a review with a photo against the stack (needs make up and make dev-env)
+# `make run` (README "Local development without Docker"): the server on 127.0.0.1 without
+# Docker, on SQLite with media on the local backend. It turns DEBUG on and seeds an all-scope demo
+# key, so it never binds 0.0.0.0. A default changes only on the make command line
+# (`make run PORT=8001`, `make run DATABASE_URL=...`): the recipe runs under `env -u DATABASE_URL
+# -u PORT`, so an exported .env.example or a PORT meant for another tool cannot redirect it. There
+# is no global PORT or DATABASE_URL assignment, so every other target keeps the shell's values.
+run_value = $(if $(filter command line,$(origin $(1))),$($(1)),$(2))
+comma := ,
+RUN_PORT = $(call run_value,PORT,8000)
+RUN_DATABASE_URL = $(call run_value,DATABASE_URL,)
+RUN_ENV = env -u DATABASE_URL -u PORT \
+	DJANGO_DEBUG=$(call run_value,DJANGO_DEBUG,true) \
+	OCTOREVIEW_STORAGE_BACKEND=$(call run_value,OCTOREVIEW_STORAGE_BACKEND,local) \
+	OCTOREVIEW_STORAGE_LOCATION_ID=$(call run_value,OCTOREVIEW_STORAGE_LOCATION_ID,local-dev) \
+	OCTOREVIEW_MEDIA_ROOT=$(call run_value,OCTOREVIEW_MEDIA_ROOT,./var/media) \
+	OCTOREVIEW_PUBLIC_BASE_URL=$(call run_value,OCTOREVIEW_PUBLIC_BASE_URL,http://127.0.0.1:$(RUN_PORT)) \
+	DJANGO_ALLOWED_HOSTS=$(call run_value,DJANGO_ALLOWED_HOSTS,127.0.0.1$(comma)localhost) \
+	OCTOREVIEW_OUTBOX_TRANSPORT=$(call run_value,OCTOREVIEW_OUTBOX_TRANSPORT,logging) \
+	$(if $(RUN_DATABASE_URL),DATABASE_URL='$(RUN_DATABASE_URL)')
+# The banner names the database engine and host, never the user or password in DATABASE_URL.
+RUN_BANNER = import os, urllib.parse as p; \
+	u = p.urlsplit(os.environ.get("DATABASE_URL") or "sqlite:///db.sqlite3"); \
+	db = "postgresql at " + u.netloc.rpartition("@")[2] + u.path if u.scheme.startswith("postgres") else u.scheme + " (" + u.path[1:] + ")"; \
+	print("make run: database " + db + ", " + os.environ["OCTOREVIEW_PUBLIC_BASE_URL"] + ", storage " + os.environ["OCTOREVIEW_STORAGE_BACKEND"])
+# SO_REUSEADDR as runserver sets it: a port in TIME_WAIT is free, one with a listener is not.
+RUN_PORT_PROBE = import socket, sys; s = socket.socket(); \
+	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1])))
+
+run: ## Serve on 127.0.0.1:8000 without Docker: SQLite, local media, demo key in .octoreview-dev.env (needs uv)
+	@command -v uv >/dev/null || { echo "make run needs uv; install it: https://docs.astral.sh/uv/" >&2; exit 1; }
+	@uv run python -c '$(RUN_PORT_PROBE)' $(RUN_PORT) 2>/dev/null || \
+		{ echo "make run: port $(RUN_PORT) is taken; run make run PORT=<other port>" >&2; exit 1; }
+	@$(RUN_ENV) uv run python -c '$(RUN_BANNER)'
+	@$(RUN_ENV) uv run python manage.py migrate --noinput
+	@$(RUN_ENV) uv run python manage.py seed --dev-env .octoreview-dev.env
+	@$(RUN_ENV) uv run python manage.py runserver 127.0.0.1:$(RUN_PORT)
+
+quickstart: ## Create a review with a photo against make up or make run (reads .octoreview-dev.env)
 	@./scripts/quickstart.sh .octoreview-dev.env
 
 compose-quickstart: ## The CI compose check: clean, second and s3 runs of the quickstart (drops the stack's volumes)
@@ -98,14 +142,15 @@ storage-check: ## Round-trip a probe object through the configured storage backe
 security: ## Audit locked dependencies for known vulnerabilities (needs network)
 	@./scripts/security-audit.sh
 
-llms-check: ## Fail when llms.txt links a missing local path (and prove the check can fail)
+llms-check: ## Fail when llms.txt or README.md links a missing local path (and prove the check can fail)
 	@./scripts/check-llms-txt.sh
+	@./scripts/check-llms-txt.sh README.md
 	@./scripts/check-llms-txt-test.sh
 
 actionlint: ## Lint GitHub Actions workflows (needs actionlint on PATH)
 	@actionlint -color
 
-version-check: ## Fail unless pyproject, openapi.yaml, settings and a CHANGELOG heading name one version
+version-check: ## Fail unless pyproject, openapi.yaml, settings, CHANGELOG, deploy/ and README image tags agree
 	@./scripts/version-check.sh
 
 placeholder-check: ## Fail while any bootstrap CI placeholder job remains
@@ -121,5 +166,5 @@ export-rulesets: ## Export the live rulesets into .github/rulesets/ (needs gh wi
 	@./scripts/export-rulesets.sh
 
 .PHONY: help install lint format checks test test-postgres test-storage docker-build docker-smoke \
-	up up-s3 down dev-env quickstart compose-quickstart seed version-check security llms-check actionlint \
+	up up-s3 down dev-env run quickstart compose-quickstart seed version-check security llms-check actionlint \
 	placeholder-check check release-check export-rulesets bench bench-postgres

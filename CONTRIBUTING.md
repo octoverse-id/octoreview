@@ -7,11 +7,16 @@ Thanks for your interest in contributing. By participating, you agree to abide b
 
 Read [`AGENTS.md`](AGENTS.md): the rules there apply to humans and agents alike.
 
+## Local setup
+
+Set up with the README's [Local development without Docker](README.md#local-development-without-docker)
+(`make install`, `make run`) or its [Quickstart](README.md#quickstart) (Docker).
+
 ## Quality gates
 
 ```bash
 make help           # list targets
-make check          # fast gate, toolchain only
+make check          # fast gate, toolchain only; run it before every PR
 make release-check  # full gate
 ```
 

@@ -212,3 +212,65 @@ this file to `server/TODOS.md`. Each item was deferred by the 2026-11-18 /autopl
   `check_storage` at `conditional_copy`.
 - **Status (2026-11-19):** not triggered. The week-1 spike found conditional copy on RustFS, MinIO
   and versitygw, and AWS S3 documents it (`docs/storage.md`).
+
+## Added by the README review (2026-11-26)
+
+### DOC-1: Run the README's commands in CI — DEFERRED
+- **What:** Inside the existing `compose-quickstart` job (no new required check name), run the
+  README's curl blocks twice in a row, the no-Docker path (`make run`, then `make quickstart`),
+  the published-image fast path and the section 8 key run (create the README's four-scope key,
+  run each API example with it), and print the quickstart wall time in the job summary.
+- **Why:** The README promises that every command runs as written; today only `make up`,
+  `make up-s3` and `make quickstart` run in CI.
+- **Pros:** A README command that breaks fails a PR; the measured time stays honest.
+- **Cons:** Longer CI; extracting blocks from Markdown is brittle unless the blocks are marked.
+- **Context:** The README PR (#69) ran these by hand and recorded them in the PR.
+- **Effort:** human M / CC S. **Priority:** P2.
+- **Trigger:** a README command breaks, or the measured quickstart time drifts.
+
+### REL-1: A GitHub Release per final tag — DEFERRED
+- **What:** `publish-image.yml` creates a GitHub Release for each `vX.Y.Z` tag with its
+  CHANGELOG section, as octonomy publishes them.
+- **Why:** The README's release badge reads tags; operators also look for Releases.
+- **Pros:** Release notes where GitHub users look; watchers get notified.
+- **Cons:** Outward-facing automation in the publish workflow; a wrong run notifies everyone.
+- **Context:** `v1.0.0` has no Release; the owner may create it by hand from the existing tag.
+- **Effort:** human S / CC S. **Priority:** P3.
+- **Trigger:** the next final release, or an operator asks for Releases.
+
+### DOC-2: A rendered API reference — DEFERRED
+- **What:** Redoc or Swagger UI built from `docs/openapi.yaml` and published to GitHub Pages.
+- **Why:** Integrators read the contract as YAML today.
+- **Pros:** A browsable reference with examples, from the file CI already checks.
+- **Cons:** A Pages deployment to own; a second place where the contract is shown.
+- **Context:** A hosted Redoc viewer pointed at the raw `docs/openapi.yaml` URL is a stopgap
+  that needs no deployment.
+- **Effort:** human S / CC S. **Priority:** P3.
+- **Trigger:** an integrator asks for a browsable reference.
+
+### DEP-4: Production compose project name and bind address — DEFERRED
+- **What:** `name: octoreview-prod` in `deploy/docker/compose.yaml`, and the API port published
+  through `${OCTOREVIEW_BIND:-127.0.0.1}` with the port in `OCTOREVIEW_PORT`, the same meanings
+  as the development stack.
+- **Why:** Unset, the project is named after its directory, `docker`, which collides with any
+  other project deployed from a `docker` directory (octonomy's `deploy/docker/compose.yaml` uses
+  `db`, `migrate`, `app` and `dispatcher` too). The README asks for `COMPOSE_PROJECT_NAME` today.
+- **Pros:** No collision without a manual step; the port moves without editing the file.
+- **Cons:** An existing install named `docker` must move its data: a release note covers
+  `docker_pgdata` (keep `COMPOSE_PROJECT_NAME=docker`, or dump and restore into the new volume).
+- **Context:** Tell octonomy about the same collision.
+- **Effort:** human S / CC S. **Priority:** P2.
+- **Trigger:** the next minor release.
+
+### DOC-3: Spec 3.6 and readiness disagree — DEFERRED
+- **What:** Reconcile spec 3.6 ("`manage.py check --deploy` and readiness refuse to run when a
+  media row references an unconfigured location", `docs/spec.md` 3.6) with spec section 5 and
+  `octoreview/api/health.py`, where readiness checks the database only.
+- **Why:** The spec of record contradicts the code; an operator reading 3.6 expects readiness to
+  catch a storage misconfiguration.
+- **Pros:** One answer for operators.
+- **Cons:** A spec owner decision: either drop the readiness claim, or add a check readiness was
+  designed to skip (a storage blip must not take every pod out of rotation).
+- **Context:** Found by the README review's Eng phase; pre-existing.
+- **Effort:** human S / CC S. **Priority:** P3.
+- **Trigger:** the next edit to spec section 3.6 or 5.
