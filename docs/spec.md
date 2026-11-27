@@ -62,7 +62,8 @@ stores external entity data (names, prices, descriptions stay with the caller).
   require a global-only or `namespace_wildcard` grant; an exact-namespace grant gets 403.
   `GET /audit-logs` with an exact-namespace grant returns only that namespace's rows.
 - **403 details:** `reason`, `required_scope`, `grant_scope`.
-- **Least-privilege keys for a storefront integration** (documented in `docs/api.md`):
+- **Least-privilege keys for a storefront integration** (README "Authentication and tenant scope"
+  shows how to create a key):
   - The backend that submits reviews: `reviews:write`, `media:write`, `entities:read`, plus
     `reviews:attest` when it submits post-purchase reviews.
   - The moderation console: `reviews:read`, `reviews:moderate`.

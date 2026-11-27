@@ -30,6 +30,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--branch v<version>` clone must name the release. For a release candidate, they must name the
   newest final release in `CHANGELOG.md`. Tags are captured up to their last letter or digit, so
   a sentence period is not part of a tag. `docs/release.md` gains a check after publish.
+- `make checks` runs `make version-check`, and `make llms-check` also checks `README.md`'s local
+  links (#69).
+- The README is rewritten for evaluation, quickstart and installation (#69): when to use
+  Octoreview, the project status, features, the Docker quickstart with its measured time, local
+  development without Docker, troubleshooting, the single-host production install, keys and
+  tenant headers, API examples, the SDKs and a documentation index. `llms.txt` and
+  `docs/deployment.md` drop the stale status, the Azure and GCS backends and "published images
+  arrive later".
 
 ## [1.0.0] - 2026-11-26
 

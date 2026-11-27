@@ -6,9 +6,11 @@ bucket or media directory.
 
 ## The image
 
-Build it with `make docker-build` (tag `octoreview:local`). Published images arrive with the
-publish workflow (epic #3). For development, `compose.yaml` runs the image with PostgreSQL
-(README "Quickstart"); it turns DEBUG on and is not a deployment template.
+The publish workflow pushes the image to `ghcr.io/octoverse-id/octoreview`; pin an `X.Y.Z` tag
+in production ([`versioning.md`](versioning.md) lists every tag and when it moves). Build it
+locally with `make docker-build` (tag `octoreview:local`). For development, `compose.yaml` runs
+the image with PostgreSQL (README "Quickstart"); it turns DEBUG on and is not a deployment
+template.
 
 - Python 3.15 slim, pinned by digest; the locked runtime dependencies plus every storage extra;
   no dev tools.
@@ -39,7 +41,7 @@ docker run -d --name octoreview -p 8000:8000 \
 ```
 
 Generate each secret with
-`python -c "import secrets; print(secrets.token_urlsafe(48))"`. `OCTOREVIEW_ERASURE_HMAC_KEY`
+`python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. `OCTOREVIEW_ERASURE_HMAC_KEY`
 never rotates (erasure markers depend on it).
 
 **Migrations are a deploy step.** The container does not migrate on start. Run them once per
@@ -147,7 +149,15 @@ Deployment and the CronJobs.
 `migrate`, the API on `127.0.0.1:8000` behind your TLS proxy, the outbox dispatcher (every
 minute) and `cleanup_media` (every 15 minutes). Copy `deploy/.env.production.example` to
 `deploy/docker/.env`, fill it in, and start it from that directory with `docker compose up -d
---wait`; the file's header lists the steps. The local backend works here (single host), on the
-`media` volume.
+--wait`; the file's header lists the steps, and the README's "Installation (production)" walks
+through each value. The local backend works here (single host), on the `media` volume.
+
+On a first install, set `COMPOSE_PROJECT_NAME=octoreview-prod` in `deploy/docker/.env`. Unset,
+the project takes the directory name `docker`, as does any other project started from a `docker`
+directory, and compose then replaces that project's containers with the same service names. The
+development stack is the project `octoreview`. An existing install keeps its project name
+(volume `docker_pgdata`): a new name starts an empty database.
+Stop the development stack before this one on the same host, because both publish
+`127.0.0.1:8000`.
 
 After either deployment, run the smoke test ([`operations.md`](operations.md) "Smoke test").

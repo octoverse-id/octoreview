@@ -33,12 +33,15 @@ format: ## Apply ruff formatting and safe fixes
 	uv run ruff check --fix .
 	uv run ruff format .
 
-checks: ## Django system checks, migration drift, import layers, grep gates and the API contract
+# checks runs the version gate, so a PR that leaves a README or deploy/ image tag behind fails
+# before any tag is pushed.
+checks: ## Django system checks, migration drift, import layers, grep gates, the API contract and the version gate
 	$(PYTEST_SETTINGS) uv run python manage.py check
 	$(PYTEST_SETTINGS) uv run python manage.py makemigrations --check --dry-run
 	uv run lint-imports
 	@./scripts/check-forbidden.sh
 	@$(MAKE) --no-print-directory openapi-check
+	@$(MAKE) --no-print-directory version-check
 
 test: ## Run the test suite on SQLite
 	uv run pytest
@@ -139,8 +142,9 @@ storage-check: ## Round-trip a probe object through the configured storage backe
 security: ## Audit locked dependencies for known vulnerabilities (needs network)
 	@./scripts/security-audit.sh
 
-llms-check: ## Fail when llms.txt links a missing local path (and prove the check can fail)
+llms-check: ## Fail when llms.txt or README.md links a missing local path (and prove the check can fail)
 	@./scripts/check-llms-txt.sh
+	@./scripts/check-llms-txt.sh README.md
 	@./scripts/check-llms-txt-test.sh
 
 actionlint: ## Lint GitHub Actions workflows (needs actionlint on PATH)
